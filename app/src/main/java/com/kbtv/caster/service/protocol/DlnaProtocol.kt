@@ -22,7 +22,8 @@ class DlnaProtocol : CastProtocol, ZxtMediaPlayer.PlaybackListener {
 
     override val name: String = "DLNA"
 
-    private var sink: CastProtocol.PlaybackSink? = null
+    /** Set by [start]; also reachable from tests to verify command translation. */
+    internal var sink: CastProtocol.PlaybackSink? = null
 
     override fun start(context: Context, sink: CastProtocol.PlaybackSink) {
         this.sink = sink

@@ -21,6 +21,7 @@ import androidx.media3.exoplayer.hls.HlsMediaSource
 import com.kbtv.caster.ui.MainActivity
 import com.kbtv.caster.service.protocol.CastProtocol
 import com.kbtv.caster.service.protocol.DlnaProtocol
+import com.kbtv.caster.service.protocol.isHlsStream
 import timber.log.Timber
 
 /**
@@ -313,16 +314,6 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
             }
             startActivity(intent)
         }
-    }
-
-    /**
-     * Check if the URI is an HLS stream
-     */
-    private fun isHlsStream(uri: String): Boolean {
-        val lower = uri.lowercase()
-        return lower.contains(".m3u8") ||
-               lower.contains("m3u8_auto") ||
-               lower.contains("type=m3u8")
     }
 
     /**
