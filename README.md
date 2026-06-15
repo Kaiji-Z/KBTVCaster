@@ -1,50 +1,44 @@
-# KBTVCaster - Android投屏服务
+# KBTVCaster - Android TV DLNA 投屏接收端
 
-这是一个完整的Android投屏服务应用，支持DLNA/UPnP协议，使用原生Android实现无需第三方UPnP库。
+Android TV 上的 DLNA/UPnP 投屏接收端：手机上的视频 App（B 站、腾讯视频、优酷等）可以把媒体推送到电视上播放。基于 Cling UPnP 栈（vendored 源码）+ Media3 ExoPlayer。
 
 ## 功能特性
 
-- **DLNA/UPnP投屏**：兼容B站、腾讯视频、优酷等视频App的投屏功能
-- **ExoPlayer媒体播放**：使用AndroidX Media3 ExoPlayer实现高质量视频播放
-- **远程控制**：播放/暂停/音量控制
-- **自动启动**：开机自启 + 应用启动自启
+- **DLNA/UPnP 投屏接收**：作为 MediaRenderer 被手机端发现，接收 `SetAVTransportURI`/`Play`/`Pause`/`Stop`/`Seek` 命令
+- **ExoPlayer 播放**：Media3 1.2.1，支持普通视频流 + HLS（含百度网盘 UA 适配）
+- **遥控器控制**：D-Pad 媒体键映射（播放/暂停/快进快退/音量/停止）
+- **开机自启**：`BOOT_COMPLETED` 后延迟 5 秒拉起前台服务
+- **协议可扩展架构**：DLNA 通过 `CastProtocol` 接口接入，未来屏幕镜像协议可插拔（见下文）
 
-## 技术实现
+## 关于屏幕镜像（重要）
 
-- **原生实现**：使用Android NsdManager + MulticastSocket实现SSDP发现
-- **HTTP服务器**：内置HTTP服务器响应DLNA设备描述和控制命令
-- **ExoPlayer**：Media3 ExoPlayer 1.2.1用于媒体播放
-- **完整UPnP**：支持AVTransport和RenderingControl服务
+本应用**只做 DLNA 媒体投屏，不做屏幕镜像**。如果你期待"手机屏幕镜像到电视"（类似[厂商]投屏），需要了解以下技术现实：
+
+- **iPhone AirPlay 镜像**需要 FairPlay DRM 认证，无合法开源实现。
+- **安卓 Miracast sink** 需要 `WifiDisplayController` 系统 API（`@hide` + SystemApi），普通第三方 App 拿不到，且 sink 代码已从现代 AOSP 删除。
+- **Google Cast 镜像接收**依赖设备证书，2025 年 3 月 Google 一次 CA 变更让所有逆向 receiver 集体失效。
+- [厂商]投屏"不用手机装 App"的体验来自**电视厂商出厂预装的系统组件**（system app，有 Miracast 权限），第三方 APK 版做不到。
+
+架构上已预留 `CastProtocol` 接口，未来若引入"手机装配套 App + MediaProjection 推流"的镜像方案，只需新增一个 `MirrorProtocol` 实现。
 
 ## 项目结构
 
 ```
 KBTVCaster/
-├── app/
-│   ├── src/main/
-│   │   ├── java/com/kbtv/caster/
-│   │   │   ├── CasterApplication.kt          # 应用入口
-│   │   │   ├── ui/
-│   │   │   │   └── MainActivity.kt           # 主界面
-│   │   │   ├── service/
-│   │   │   │   └── CastCoordinatorService.kt # 主服务协调器
-│   │   │   ├── receiver/
-│   │   │   │   └── BootReceiver.kt           # 开机启动接收器
-│   │   │   └── dlna/                         # DLNA/UPnP实现
-│   │   │       └── (使用org.fourthline.cling库)
-│   │   ├── res/                              # 资源文件
-│   │   └── AndroidManifest.xml               # 应用清单
-│   └── src/test/                             # 单元测试
-│       └── java/com/kbtv/caster/
-│           └── dlna/
-│               └── TransportStateTest.kt
-├── gradle/wrapper/                           # Gradle包装器
-├── build.gradle.kts                          # 根构建配置
-├── settings.gradle.kts                       # 项目设置
-├── gradle.properties                         # Gradle属性
-├── local.properties                          # 本地配置
-├── AGENTS # AI代理.md                                开发指南
-└── README.md                                 # 本文档
+├── app/src/main/java/com/kbtv/caster/
+│   ├── CasterApplication.kt          # 入口：Timber、通知 channel、SAX driver
+│   ├── ui/MainActivity.kt            # 主界面 + 遥控器按键处理
+│   ├── service/
+│   │   ├── CastCoordinatorService.kt # 前台服务，持有 ExoPlayer + List<CastProtocol>
+│   │   └── protocol/
+│   │       ├── CastProtocol.kt       # 协议抽象（start/stop + PlaybackSink）
+│   │       └── DlnaProtocol.kt       # DLNA 实现，桥接 DLNAUtils
+│   ├── receiver/BootReceiver.kt      # 开机自启
+│   └── dlna/DLNAUtils.java           # Java 桥：bind Cling，创建 ZxtMediaRenderer
+├── app/src/main/java/com/zxt/dlna/dmr/  # UPnP DMR 实现（AVTransport/RenderingControl）
+├── app/src/main/java/org/fourthline/cling/  # vendored Cling UPnP 源码（只读，勿改）
+├── app/libs/                          # Cling 依赖 jar（Jetty/seamless/httpclient）
+└── app/src/test/                      # 单元测试
 ```
 
 ## 环境要求
@@ -170,42 +164,42 @@ adb logcat -d | grep -E "DLNA|AVTransport|RenderingControl"
 
 ## 技术说明
 
-### 原生UPnP/DLNA实现
+### DLNA/UPnP 实现
 
-- 使用 **Android NsdManager** 实现mDNS服务发现
-- 使用 **MulticastSocket** 实现SSDP协议响应
-- 内置 **HTTP服务器** 响应设备描述和控制命令
-- 实现 **AVTransport** 服务（播放/暂停/停止/SetURI）
-- 实现 **RenderingControl** 服务（音量控制）
+- 基于 **Cling UPnP 栈**（`org.fourthline.cling`，以源码形式 vendored，源自 TVRemoteIME）
+- `ZxtMediaRenderer` 注册为 UPnP `MediaRenderer` 设备，含三个服务：
+  - **AVTransport**：SetAVTransportURI / Play / Pause / Stop / Seek
+  - **RenderingControl**：Get/SetMute、Get/SetVolume（控制系统音量）
+  - **ConnectionManager**：声明支持的 MIME 类型
+- 命令经 `ZxtMediaPlayer.PlaybackListener` 回调到 `DlnaProtocol`，再由 `CastProtocol.PlaybackSink` 转给 `CastCoordinatorService` 的 ExoPlayer
 
-### ExoPlayer媒体播放
+### ExoPlayer 媒体播放
 
-- 使用 **AndroidX Media3 ExoPlayer 1.2.1** 实现媒体播放
-- 支持HTTP/HTTPS视频流播放
-- 支持音量控制和静音功能
-- 自动播放控制（Play/Pause/Stop）
+- **AndroidX Media3 ExoPlayer 1.2.1**，服务持有单实例
+- HLS 检测（`.m3u8` / `type=m3u8`）→ 用 `HlsMediaSource`
+- 百度网盘 URL 自动设置 `pan.baidu.com` User-Agent
+- 收到投屏时自动把 MainActivity 带到前台
 
 ## 关键依赖
 
 | 库 | 版本 | 用途 |
 |---|---|---|
-| AndroidX Core-KTX | 1.12.0 | Android核心扩展 |
+| AndroidX Core-KTX | 1.12.0 | Android 核心扩展 |
 | AndroidX Lifecycle | 2.7.0 | 生命周期管理 |
-| Media3 ExoPlayer | 1.2.1 | 媒体播放 |
+| Media3 ExoPlayer | 1.2.1 | 媒体播放（含 HLS） |
 | Kotlinx Coroutines | 1.7.3 | 异步操作 |
-| OkHttp | 4.12.0 | HTTP客户端 |
-| Timber | 5.0.1 | 日志 |
-| Cling UPnP | TVRemoteIME | UPnP/DLNA实现 |
-| JUnit | 4.13.2 | 单元测试 |
-| Mockito | 5.8.0 | 模拟测试 |
+| OkHttp | 4.12.0 | HTTP 客户端 |
+| Timber | 5.0.1 | 日志（仅 debug 构建） |
+| Cling UPnP | 2.0.1 (vendored 源码) | UPnP/DLNA 协议栈 |
+| JUnit / Mockito | 4.13.2 / 5.8.0 | 单元测试 |
 
 ## 已知限制
 
-1. Android 6.0 (API 23) 兼容性测试有限
-2. 某些App可能使用私有DLNA协议实现
-3. 需要在同一局域网内才能发现设备
-4. ExoPlayer需要网络连接才能播放流媒体
-5. 部分投屏功能可能不兼容所有视频App
+1. **仅 DLNA 媒体投屏，无屏幕镜像**（详见上文"关于屏幕镜像"）
+2. Cling UPnP 源码 vendored（533 文件）—— 该库未发布到 Maven Central，无法换成依赖；视为只读 vendor 代码
+3. `kotlin.incremental=false`（兼容 Cling 源码编译所需，拖慢全量构建）
+4. 需要在同一局域网内才能发现设备
+5. Android 6.0 (API 23) 兼容性测试有限
 
 ## 许可证
 
