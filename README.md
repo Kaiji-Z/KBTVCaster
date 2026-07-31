@@ -1,6 +1,14 @@
 # KBTVCaster - Android TV DLNA 投屏接收端
 
-Android TV 上的 DLNA/UPnP 投屏接收端：手机上的视频 App（B 站、腾讯视频、优酷等）可以把媒体推送到电视上播放。基于 Cling UPnP 栈（vendored 源码）+ Media3 ExoPlayer。
+> 把你的 Android TV 变成一个 DLNA 投屏接收端 —— 手机上的视频 App（B 站、腾讯视频、优酷等）一键把媒体推送到电视上播放。
+
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Platform](https://img.shields.io/badge/platform-Android%20TV-green.svg)
+![Language](https://img.shields.io/badge/Kotlin-1.9.24-7F52FF.svg)
+![Min SDK](https://img.shields.io/badge/minSDK-23%20(Android%206.0)-orange.svg)
+![DLNA](https://img.shields.io/badge/DLNA-UPnP-red.svg)
+
+基于 Cling UPnP 栈（vendored 源码）+ Media3 ExoPlayer。前台服务 + 开机自启，装上即用。
 
 ## 功能特性
 
