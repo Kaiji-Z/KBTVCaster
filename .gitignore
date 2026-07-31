@@ -29,6 +29,11 @@ local.properties
 *.ap_
 *.rsa
 *.DSA
+# Build outputs — never commit binaries (use GitHub Releases for archives)
+*.apk
+*.aab
+*.tar.gz
+*.zip
 
 # Generated
 bin/
