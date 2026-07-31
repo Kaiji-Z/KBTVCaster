@@ -127,16 +127,16 @@ val status: LiveData<Status> = _status
 
 | Issue | Status | Resolution |
 |-------|--------|------------|
-| **Notification channel mismatch** | ✅ Fixed (988473c) | `castertv_channel` → `caster_service` in CastCoordinatorService.kt |
-| **BootReceiver blocks** | ✅ Fixed (d9aaa64) | `Thread.sleep(5000)` → `Handler.postDelayed({}, 5000)` |
-| **versionName stale** | ✅ Fixed (fa0b014) | `0.1.1` → `0.2.1` |
-| Build artifacts in git | ✅ Fixed (1e99442) | `.gitignore` fixed |
-| **Foreground service crash on boot** | ✅ Fixed (38d634c) | `startForeground()` moved to top of `start()`; `restartHandler` callbacks cleared in `stop()` |
-| **DLNAUtils ServiceConnection leak** | ✅ Fixed (d0e6398) | ServiceConnection stored as field; `unbindService()` in `stopDLNAService()`; volatile on static fields |
-| **MainActivity ExoPlayer listener leak** | ✅ Fixed (c0b3ba6) | Listener stored as field; `removeListener()` in `onDestroy()`; `playerView.player = null` |
-| **Action string package mismatch** | ✅ Fixed (38d634c) | `com.caster.tv.action.*` → `com.kbtv.caster.action.*` |
-| **ExoPlayer release not resilient** | ✅ Fixed (38d634c) | Separate try/catch for `stop()` and `release()`; always null out |
-| **ZxtMediaRenderer LastChange thread leak** | ✅ Fixed (8ee3d2d) | `while(true)` → `volatile lastChangeThreadRunning` flag, cleared in `stopAllMediaPlayers()` |
+| **Notification channel mismatch** | ✅ Fixed (16de7b4) | `castertv_channel` → `caster_service` in CastCoordinatorService.kt |
+| **BootReceiver blocks** | ✅ Fixed (3ebdb99) | `Thread.sleep(5000)` → `Handler.postDelayed({}, 5000)` |
+| **versionName stale** | ✅ Fixed (5dcb091) | `0.1.1` → `0.2.1` |
+| Build artifacts in git | ✅ Fixed (11f5da8) | `.gitignore` fixed |
+| **Foreground service crash on boot** | ✅ Fixed (1cfebf6) | `startForeground()` moved to top of `start()`; `restartHandler` callbacks cleared in `stop()` |
+| **DLNAUtils ServiceConnection leak** | ✅ Fixed (7b2082f) | ServiceConnection stored as field; `unbindService()` in `stopDLNAService()`; volatile on static fields |
+| **MainActivity ExoPlayer listener leak** | ✅ Fixed (c01251a) | Listener stored as field; `removeListener()` in `onDestroy()`; `playerView.player = null` |
+| **Action string package mismatch** | ✅ Fixed (1cfebf6) | `com.caster.tv.action.*` → `com.kbtv.caster.action.*` |
+| **ExoPlayer release not resilient** | ✅ Fixed (1cfebf6) | Separate try/catch for `stop()` and `release()`; always null out |
+| **ZxtMediaRenderer LastChange thread leak** | ✅ Fixed (68ba432) | `while(true)` → `volatile lastChangeThreadRunning` flag, cleared in `stopAllMediaPlayers()` |
 | Cling is vendored source, not Maven | By design | `org/fourthline/cling/` (533 files). Cling never published to Maven Central; treat as read-only vendor code |
 | No instrumented tests | Open | `androidTest/` missing despite espresso deps |
 | `kotlin.incremental=false` | By design | Cling source compilation requires it; slows full rebuild |
