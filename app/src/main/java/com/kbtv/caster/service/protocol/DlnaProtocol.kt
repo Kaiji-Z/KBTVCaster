@@ -2,23 +2,23 @@ package com.kbtv.caster.service.protocol
 
 import android.content.Context
 import android.net.Uri
-import com.kbtv.caster.dlna.DLNAUtils
-import com.zxt.dlna.dmr.ZxtMediaPlayer
+import com.kbtv.caster.dlna.DlnaBootstrap
+import com.kbtv.caster.dlna.renderer.DmrPlaybackListener
 import timber.log.Timber
 
 /**
  * DLNA/UPnP MediaRenderer protocol.
  *
- * Wraps the existing TVRemoteIME-based DLNA stack (DLNAUtils + Cling) behind
- * the [CastProtocol] surface. Acts as the [ZxtMediaPlayer.PlaybackListener]:
- * UPnP AVTransport commands (Play/Pause/Stop/Seek/SetAVTransportURI) arrive
- * from the phone and are translated into [CastProtocol.PlaybackCommand]s
- * forwarded to the coordinator service's shared ExoPlayer.
+ * Starts the Cling-based DMR stack ([DlnaBootstrap]) behind the
+ * [CastProtocol] surface. Acts as a [DmrPlaybackListener]: UPnP AVTransport
+ * commands (Play/Pause/Stop/Seek/SetAVTransportURI) arrive from the phone
+ * and are translated into [CastProtocol.PlaybackCommand]s forwarded to the
+ * coordinator service's shared ExoPlayer.
  *
  * The playback rendering (HLS detection, Baidu UA, ExoPlayer control) stays
  * in the service — this class only relays commands.
  */
-class DlnaProtocol : CastProtocol, ZxtMediaPlayer.PlaybackListener {
+class DlnaProtocol : CastProtocol, DmrPlaybackListener {
 
     override val name: String = "DLNA"
 
@@ -28,8 +28,8 @@ class DlnaProtocol : CastProtocol, ZxtMediaPlayer.PlaybackListener {
     override fun start(context: Context, sink: CastProtocol.PlaybackSink) {
         this.sink = sink
         try {
-            DLNAUtils.setPlaybackListener(this)
-            DLNAUtils.startDLNAService(context)
+            DlnaBootstrap.setPlaybackListener(this)
+            DlnaBootstrap.start(context)
             Timber.d("DLNA protocol started")
         } catch (e: Exception) {
             Timber.e(e, "Failed to start DLNA protocol")
@@ -38,14 +38,14 @@ class DlnaProtocol : CastProtocol, ZxtMediaPlayer.PlaybackListener {
 
     override fun stop() {
         try {
-            DLNAUtils.stopDLNAService()
+            DlnaBootstrap.stop()
         } catch (e: Exception) {
             Timber.w(e, "Error stopping DLNA protocol")
         }
         sink = null
     }
 
-    // ===== ZxtMediaPlayer.PlaybackListener =====
+    // ===== DmrPlaybackListener =====
 
     override fun onPlay(uri: Uri) {
         Timber.d("DLNA onPlay: $uri")

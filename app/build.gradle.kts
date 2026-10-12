@@ -101,21 +101,21 @@ dependencies {
     implementation("androidx.media3:media3-common:1.2.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.2.1")
 
-    // Cling UPnP library - using source from TVRemoteIME-master (org.fourthline.cling)
-    // Dependencies from libs/
-    implementation(fileTree("libs") { include("*.jar") })
+    // Cling UPnP library - vendored source (org.fourthline.cling); transitive deps from libs/.
+    // javax.annotation (CDDL) is compile-only: its sole referencer, vendored
+    // ManagedUpnpServiceConfiguration, is never instantiated — keeping it out
+    // of the APK avoids shipping CDDL-licensed code (docs/LICENSE-SWITCH.md §3).
+    implementation(fileTree("libs") {
+        include("*.jar")
+        exclude("javax.annotation*.jar")
+    })
+    compileOnly(fileTree("libs") { include("javax.annotation*.jar") })
 
     // Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.mockito:mockito-core:5.8.0")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
-
-    // Cling UPnP library - using source from TVRemoteIME-master (org.fourthline.cling)
-    // Exclude old slf4j from libs/ to avoid conflicts
-    val clingJars = fileTree("libs") { include("*.jar") }
-    clingJars.exclude { it.file.name.contains("slf4j") }
-    implementation(clingJars)
 
     // AndroidX Test
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
