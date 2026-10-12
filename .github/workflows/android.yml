@@ -1,0 +1,27 @@
+name: android-ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  jvm:
+    name: Build + JVM unit tests (flag off/on)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      # VERIFICATION.md §4: the same suite must pass with feature flags off AND on.
+      - name: Build and run JVM tests (flag off)
+        run: ./gradlew test assembleDebug --console=plain
+
+      - name: Run JVM tests (flag on, playbackPlan)
+        run: ./gradlew test -Pkbtv.flags.playbackPlan=true --console=plain

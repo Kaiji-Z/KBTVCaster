@@ -1,10 +1,14 @@
 # AGENTS.md - KBTVCaster
 
-**Updated:** 2026-06-15 | **Branch:** master
+**Updated:** 2026-10-13 | **Branch:** master
 
 Android TV **DLNA 投屏接收端**：基于 Cling UPnP 栈的 MediaRenderer，接收手机视频 App 推送的媒体 URL，用 Media3 ExoPlayer 播放。前台服务 + 开机自启。
 
 **只做 DLNA 媒体投屏，不做屏幕镜像。** 详见 README「关于屏幕镜像」。架构上已抽象 `CastProtocol` 接口，未来镜像协议可插拔。
+
+## MANDATORY PROTOCOL
+
+开发任何功能、改任何代码之前，先读并遵循项目根目录的 [VERIFICATION.md](VERIFICATION.md)。它承载本项目的 §8 参数（验收标准、工具链落地、flag 方案）——只在本仓库里改它，永远不要改全局 skill 目录。违反 VERIFICATION.md §7 红线的产出视为无效。
 
 ## BEHAVIORAL RULES
 
@@ -63,7 +67,8 @@ Boot: BootReceiver → CastCoordinatorService(ACTION_START) after 5s Handler.pos
 | Add a new protocol | `service/protocol/CastProtocol.kt` + 新实现 | 实现 `start()/stop()`，命令经 `PlaybackSink` 转发 |
 | Change DLNA device name | `service/CastCoordinatorService.kt` `onCreate` | 硬编码，非 resources |
 | Add DLNA command | `dlna/DLNAUtils.java` → `com/zxt/dlna/dmr/` | `AVTransportService.java` for UPnP actions |
-| Playback command handling | `service/CastCoordinatorService.kt` `onCommand()` / `handlePlay()` | HLS 检测 + Baidu UA + 前台化在此 |
+| Playback command handling | `service/CastCoordinatorService.kt` `onCommand()` / `handlePlay()` | Baidu UA + 前台化在此 |
+| HLS detection | `service/protocol/HlsDetection.kt` | 纯函数 `isHlsStream()`，从 handlePlay 抽出以便单测 |
 | UI / remote keys | `ui/MainActivity.kt` | D-pad 媒体键，PlayerView 生命周期 |
 | Boot auto-start | `receiver/BootReceiver.kt` | BOOT_COMPLETED + QUICKBOOT_POWERON + REBOOT |
 | Notification channels | `CasterApplication.kt` | 创建 `caster_service`, `caster_playback` |
@@ -80,9 +85,12 @@ app/src/main/java/
 │   │   ├── CastCoordinatorService.kt  # 前台服务，持有 ExoPlayer + protocols 列表
 │   │   └── protocol/
 │   │       ├── CastProtocol.kt   # 协议抽象接口
-│   │       └── DlnaProtocol.kt   # DLNA 实现，桥接 DLNAUtils
+│   │       ├── DlnaProtocol.kt   # DLNA 实现，桥接 DLNAUtils
+│   │       └── HlsDetection.kt   # 纯函数：isHlsStream(uri) HLS 检测
 │   ├── receiver/BootReceiver.kt  # 开机自启
 │   ├── ui/MainActivity.kt        # 主界面 + 遥控器
+│   ├── airplay/                  # AirPlay 接收（flag 门控 kbtv.flags.airplay）：Request/Mapper 解析 + Server + Protocol(mDNS)
+│   ├── trace/TraceRecorder.kt    # JSONL 结构化运行记录（debug 写 files/trace/）
 │   └── dlna/DLNAUtils.java       # Java 桥：bind Cling，创建 ZxtMediaRenderer
 ├── org/fourthline/cling/         # EMBEDDED: Cling UPnP (533 Java files) — DO NOT MODIFY
 └── com/zxt/dlna/                 # EMBEDDED: ZxtMediaRenderer DMR (Java)
@@ -161,7 +169,26 @@ class FooTest {
 - **Framework:** JUnit 4 + Mockito 5 + mockito-kotlin
 - **Naming:** Backtick descriptive names
 - **No Robolectric, no Espresso** — pure JVM unit tests only
-- **Test files:** `dlna/TransportStateTest.kt`, `control/MediaUriTest.kt`
+- **Test files:** `dlna/TransportStateTest.kt`, `control/MediaUriTest.kt`, `service/protocol/CastProtocolTest.kt`, `service/protocol/DlnaProtocolTest.kt`, `service/protocol/HlsDetectionTest.kt`
+
+## VERIFICATION STATUS（2026-10-12 诊断，详见 [VERIFICATION.md](VERIFICATION.md)）
+
+- **ACI 审计**：§2.1 无 UI 运行 ✗ 不达标（端到端 headless 断裂，androidTest 缺失）；§2.2 状态记录 △ 部分（logcat 可程序化读取，但非结构化、不持久）；§2.3 程序化接口 ✗ 不达标（无外部状态/trace 原生接口，仅进程内 LiveData）
+- **测试基建**：回归 `./gradlew test`（39 用例，JVM 纯逻辑）；断言 JUnit 4 + mockito-kotlin（捕获式 sink 模式，DlnaProtocolTest.kt:24-29）；无 supervisor（开发者裁定：纯确定性断言）；无 flag 机制（仅 BuildConfig.DEBUG 管日志）
+- **验收标准**：已冻结于 VERIFICATION.md §8.5（含端到端项）；§8.7 落地范围 = TV 模拟器 instrumented 测试 + DLNA 控制点模拟脚本（SOAP 经 `adb forward` 直连 Cling 端口，跳过 SSDP 组播）
+
+**验证积压（按优先级）：**
+
+| # | 项 | 级别 | 状态 |
+|---|---|---|---|
+| 1 | 建 androidTest + TV 模拟器，端到端驱动 PlaybackSink 断言 ExoPlayer 状态机 | P0 | 待修复（需开发者装 TV 系统镜像） |
+| 2 | 结构化运行记录（instrumentation 输出/文件），替代只靠 logcat 环形缓冲 | P0 | 待修复 |
+| 3 | 验收标准冻结 | P0 | ✅ 本轮已完成 |
+| 4 | flag 机制（Gradle 属性或 BuildConfig 字段，同套件 on/off 对比） | P1 | 待修复 |
+| 5 | 抽纯函数 PlaybackPlan(uri)→{sourceType, ua}，Service 只执行 | P1 | 待修复 |
+| 6 | LLM 裁判设计 | P1 | ✅ 裁定不需要（确定性断言） |
+| 7 | CI（.github/workflows 跑 test + lint） | P2 | 待修复 |
+| 8 | lint 升级为阻塞门禁 | P2 | 可选 |
 
 ## GIT
 
@@ -185,8 +212,10 @@ update stuff                                       ❌ too vague
 
 ## NOTES
 
+- **License**: GPLv3（2026-10-13 自 MIT 切换）。审计在 `docs/LICENSE-SWITCH.md`。`com/zxt/dlna/**` 源自 TVRemoteIME/GPL-2.0，clean-room 重写完成前**不对外分发**。目标施工规格见 `.goal/SPEC.md`。
+
 - **Embedded libraries** (`org.fourthline.cling.*`, `com.zxt.dlna.*`): Source files, not Maven deps. Treat as read-only vendor code. ~550 Java files total.
 - **`app/libs/`**: JARs (Jetty 8.1.9, Cling support 2.0.1, seamless 1.0-alpha2, Apache HTTP). Supply Cling's transitive deps.
-- **Release process**: Use `.opencode/skills/kbtv-versioning/` skill. Changelogs in `releases/`.
+- **Release process**: Use `.opencode/skills/kbtv-versioning/` skill. Changelogs in `releases/` (index: `releases/INDEX.md`). Releases are tagged `v<version>` (existing: v0.1.0–v0.2.1).
 - **Lint**: Non-blocking (`abortOnError=false`). Informational only.
 - **`temp/` directory**: Working notes and scripts. In `.gitignore`.
