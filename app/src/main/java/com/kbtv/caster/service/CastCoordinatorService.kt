@@ -18,10 +18,14 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import com.kbtv.caster.BuildConfig
 import com.kbtv.caster.ui.MainActivity
 import com.kbtv.caster.service.protocol.CastProtocol
 import com.kbtv.caster.service.protocol.DlnaProtocol
+import com.kbtv.caster.service.protocol.FeatureFlags
+import com.kbtv.caster.service.protocol.PlaybackPlan
 import com.kbtv.caster.service.protocol.isHlsStream
+import com.kbtv.caster.trace.TraceRecorder
 import timber.log.Timber
 
 /**
@@ -40,8 +44,10 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
 
     private val binder = LocalBinder()
 
-    /** Registered casting protocols. Add future protocols (mirror, …) here. */
-    private val protocols: List<CastProtocol> = listOf(DlnaProtocol())
+    /** Registered casting protocols. AirPlay is flag-gated; default off reproduces pre-change behavior. */
+    private val protocols: List<CastProtocol> =
+        if (FeatureFlags.airplayProtocol) listOf(DlnaProtocol(), com.kbtv.caster.airplay.AirPlayProtocol())
+        else listOf(DlnaProtocol())
 
     // Service status
     private val _serviceStatus = MutableLiveData<ServiceStatus>(ServiceStatus.STOPPED)
@@ -77,7 +83,9 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
 
     override fun onCreate() {
         super.onCreate()
+        TraceRecorder.init(filesDir, BuildConfig.DEBUG)
         Timber.d("CastCoordinatorService created")
+        TraceRecorder.log("service_created")
         // 设备名称固定为"凯机投屏"
         _deviceName.value = "凯机投屏"
     }
@@ -116,8 +124,10 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
             protocols.forEach { protocol ->
                 try {
                     protocol.start(this, this)
+                    TraceRecorder.log("protocol_started", "protocol" to protocol.name)
                 } catch (e: Exception) {
                     Timber.e(e, "Failed to start ${protocol.name} protocol")
+                    TraceRecorder.log("protocol_start_failed", "protocol" to protocol.name, "error" to e.message)
                 }
             }
             _rendererReady.value = true
@@ -125,6 +135,7 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
             isRunning = true
             restartAttempts = 0
             _serviceStatus.value = ServiceStatus.RUNNING
+            TraceRecorder.log("service_running")
 
             Timber.d("CastCoordinatorService started successfully")
             showNotification("凯机投屏服务运行中", "点击打开遥控器")
@@ -132,6 +143,7 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
         } catch (e: Exception) {
             Timber.e(e, "Failed to start CastCoordinatorService")
             _serviceStatus.value = ServiceStatus.ERROR
+            TraceRecorder.log("service_error", "error" to e.message)
             scheduleRestart()
         }
     }
@@ -146,10 +158,12 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
                 exoPlayer?.addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         Timber.d("ExoPlayer playback state: $playbackState")
+                        TraceRecorder.log("playback_state", "state" to playbackState)
                     }
 
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
                         Timber.d("ExoPlayer isPlaying: $isPlaying")
+                        TraceRecorder.log("is_playing", "playing" to isPlaying)
                     }
                 })
                 Timber.d("ExoPlayer initialized successfully")
@@ -194,6 +208,7 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
         _rendererReady.value = false
 
         Timber.d("CastCoordinatorService stopped")
+        TraceRecorder.log("service_stopped")
     }
 
     /**
@@ -225,6 +240,7 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
         if (restartAttempts < maxRestartAttempts) {
             restartAttempts++
             Timber.d("Scheduling restart attempt ${restartAttempts}/${maxRestartAttempts} in ${restartDelayMillis}ms")
+            TraceRecorder.log("restart_scheduled", "attempt" to restartAttempts, "max" to maxRestartAttempts)
             restartHandler.postDelayed({
                 start()
             }, restartDelayMillis)
@@ -241,6 +257,11 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
     // ===== CastProtocol.PlaybackSink: commands from registered protocols =====
 
     override fun onCommand(command: CastProtocol.PlaybackCommand) {
+        TraceRecorder.log(
+            "command",
+            "cmd" to command.javaClass.simpleName,
+            "uri" to (command as? CastProtocol.PlaybackCommand.Play)?.uri?.toString(),
+        )
         runOnUiThread {
             try {
                 when (command) {
@@ -264,6 +285,14 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
     private fun handlePlay(uri: Uri) {
         Timber.d("Play: $uri")
         val player = exoPlayer ?: return
+
+        if (FeatureFlags.playbackPlanRouting) {
+            handlePlayWithPlan(player, uri)
+            bringUiToFrontIfNeeded()
+            return
+        }
+
+        // Legacy routing (FLAG_PLAYBACK_PLAN_ROUTING=false): pre-refactor behavior, kept verbatim.
         val uriString = uri.toString()
 
         if (isHlsStream(uriString)) {
@@ -293,8 +322,53 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
         player.prepare()
         player.play()
         Timber.d("ExoPlayer started playback: $uri")
+        TraceRecorder.log("play_started", "path" to "legacy", "uri" to uriString)
 
         bringUiToFrontIfNeeded()
+    }
+
+    /**
+     * Flag-on path: execute the routing decision made by [PlaybackPlan.forUri].
+     * Mirrors the legacy branch's ExoPlayer calls; only the decision source differs.
+     */
+    @androidx.annotation.OptIn(UnstableApi::class)
+    private fun handlePlayWithPlan(player: ExoPlayer, uri: Uri) {
+        val plan = PlaybackPlan.forUri(uri.toString())
+        TraceRecorder.log(
+            "routing",
+            "path" to "plan",
+            "hls" to plan.isHls,
+            "ua" to plan.userAgent,
+            "sourceType" to plan.sourceType.name,
+        )
+
+        if (plan.isHls) {
+            val dataSourceFactory = if (plan.userAgent != null) {
+                Timber.d("Detected Baidu Netdisk URL, setting custom User-Agent")
+                DefaultHttpDataSource.Factory()
+                    .setUserAgent(plan.userAgent)
+                    .setConnectTimeoutMs(plan.connectTimeoutMs)
+                    .setReadTimeoutMs(plan.readTimeoutMs)
+            } else {
+                DefaultDataSource.Factory(this)
+            }
+
+            val mediaItem = MediaItem.Builder()
+                .setUri(plan.uri)
+                .setMimeType("application/x-mpegURL")
+                .build()
+
+            val hlsMediaSource = HlsMediaSource.Factory(dataSourceFactory)
+                .createMediaSource(mediaItem)
+            player.setMediaSource(hlsMediaSource)
+            Timber.d("Using HlsMediaSource for playback (plan routing)")
+        } else {
+            player.setMediaItem(MediaItem.fromUri(uri))
+        }
+        player.prepare()
+        player.play()
+        Timber.d("ExoPlayer started playback: $uri")
+        TraceRecorder.log("play_started", "path" to "plan", "uri" to uri.toString())
     }
 
     /**

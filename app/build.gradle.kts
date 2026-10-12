@@ -15,6 +15,12 @@ android {
         versionName = "0.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Feature flags (VERIFICATION.md §8.3): -Pkbtv.flags.<name>=true; default false == pre-change behavior
+        val flagPlaybackPlan = (project.findProperty("kbtv.flags.playbackPlan") as? String)?.toBooleanStrictOrNull() ?: false
+        buildConfigField("boolean", "FLAG_PLAYBACK_PLAN_ROUTING", flagPlaybackPlan.toString())
+        val flagAirplay = (project.findProperty("kbtv.flags.airplay") as? String)?.toBooleanStrictOrNull() ?: false
+        buildConfigField("boolean", "FLAG_AIRPLAY_PROTOCOL", flagAirplay.toString())
     }
 
     buildTypes {
