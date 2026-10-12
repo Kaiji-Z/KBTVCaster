@@ -203,11 +203,12 @@ A feature is done if and only if ALL hold:
 - Command/API to fetch a trace:
   none, needed. Current best: `adb logcat -d -s "DLNAUtils:*" "CastCoordinator:*" "Timber:*"` (README.md:119) — human-readable ring buffer only, not structured, not durable.
 
-### 8.2 Test infra [auto-fill] — UPDATED 2026-10-13 (remediation Rounds 2–5)
-- Regression run command: `./gradlew test`（本机 wrapper 损坏，改用缓存 8.14.3 直调，见 .goal/SPEC.md §6）；flag 双态：`-Pkbtv.flags.playbackPlan=true`
-- Regression set directory: `app/src/test/java/com/kbtv/caster/` — 8 files, 62 tests（新增 PlaybackPlanTest 13、FeatureFlagsTest 4、TraceRecorderTest 6；2026-10-13 双态绿）；e2e 层 `app/src/androidTest/java/com/kbtv/caster/e2e/DlnaE2eTest.kt`（2 用例，编译绿，实跑待 TV AVD）
-- Host-side control-point simulator: `app/src/androidTest/assets/controlpoint/dlna_control_point.py`（stdlib-only；/proc 端口枚举 + adb forward + SOAP SetAVTransportURI/Play + trace 断言）
-- Assertion framework: JUnit 4.13.2 + mockito-core 5.8.0 + mockito-kotlin 5.2.1 + kotlinx-coroutines-test (app/build.gradle.kts:103-106). Capturing-sink pattern established at DlnaProtocolTest.kt:24-29.
+### 8.2 Test infra [auto-fill] — FINAL 2026-10-13 (Rounds 2–13)
+- Regression run command: `./gradlew test`（本机 wrapper 损坏，改用缓存 8.14.3 直调，见 .goal/SPEC.md §6）；三旗态：默认 / `-Pkbtv.flags.playbackPlan=true` / `-Pkbtv.flags.airplay=true`
+- Regression set directory: `app/src/test/java/com/kbtv/caster/` — 89 tests（0 失败 × 三旗，2026-10-13 A6 净室重写后复验）
+- Instrumented (TV AVD android-tv API 33): `app/src/androidTest/java/com/kbtv/caster/e2e/` — DlnaE2eTest（2，控制点 SOAP 链）+ AirPlayE2eTest（3，Assume 门控）+ MirrorDecodePathTest（1，900 帧 p95 探针）。默认旗 3 跑 3 跳过 / airplay 旗 6 全跑——双轮 0 失败（含 A6 重写后复验）
+- Host-side control-point simulator: `app/src/androidTest/assets/controlpoint/dlna_control_point.py`（stdlib-only；trace 取 UDN+描述符路径 → /proc 端口枚举 + adb forward → 描述符 200 → SOAP SetAVTransportURI/Play（SOAPACTION 需双引号）→ trace 断言 play_started）
+- Assertion framework: JUnit 4.13.2 + mockito-core 5.8.0 + mockito-kotlin 5.2.1 + kotlinx-coroutines-test. Capturing-sink pattern established at DlnaProtocolTest.kt:24-29.
 
 ### 8.3 Flag mechanism [auto-fill] — UPDATED 2026-10-13 (remediation Round 2)
 - Mechanism landed: `app/build.gradle.kts` reads Gradle property `-Pkbtv.flags.<name>=<bool>` into a generated `BuildConfig.FLAG_*` boolean (default false == pre-change behavior); runtime access via `com.kbtv.caster.service.protocol.FeatureFlags`. First flag: `kbtv.flags.playbackPlan` → `FLAG_PLAYBACK_PLAN_ROUTING` (PlaybackPlan routing vs legacy inline branch in `CastCoordinatorService.handlePlay`). Verified: same suite green under flag=off and flag=on (56/56, exit 0 both).
