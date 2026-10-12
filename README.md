@@ -83,8 +83,8 @@ adb install -r app-debug.apk
 │ CastCoordinatorService (前台服务)             │
 │   ├─ List<CastProtocol>                      │
 │   │   └─ DlnaProtocol                        │
-│   │       └─ DLNAUtils → Cling UPnP 栈       │
-│   │           └─ ZxtMediaRenderer            │
+│   │       └─ DlnaBootstrap → Cling UPnP 栈   │
+│   │           └─ dlna/renderer/ (净室 DMR)    │
 │   │               (AVTransport/RenderingControl)
 │   └─ ExoPlayer (单实例，渲染到 Surface)        │
 └─────────────────────────────────────────────┘
@@ -116,7 +116,7 @@ adb install -r app-debug.apk
 - 确认手机和电视在**同一 WiFi**（不是访客网络 / 不同子网）
 - 某些路由器隔离了多播（AP 隔离），需关闭
 - 电视上确认 KBTVCaster 在前台运行（通知栏有图标）
-- 查日志：`adb logcat -s "DLNAUtils:*" "CastCoordinator:*"`
+- 查日志：`adb logcat -s "CastCoordinator:*" "Timber:*" "KbtvNet:*"`
 
 ### 投屏了但播放失败？
 
@@ -151,7 +151,7 @@ app/src/main/java/com/kbtv/caster/
 │       └── DlnaProtocol.kt       # DLNA 实现
 ├── receiver/BootReceiver.kt      # 开机自启
 ├── ui/MainActivity.kt            # 主界面 + 遥控器
-└── dlna/DLNAUtils.java           # Java 桥（bind Cling）
+└── dlna/                         # DlnaBootstrap + KbtvUpnpServiceImpl + renderer/（净室 DMR）
 ```
 
 ## 🤝 贡献
@@ -165,4 +165,4 @@ app/src/main/java/com/kbtv/caster/
 
 [GPLv3](LICENSE)（2026-10 由 MIT 切换；贡献者与第三方许可证审计见 [docs/LICENSE-SWITCH.md](docs/LICENSE-SWITCH.md)）
 
-> **注意**：本项目内嵌的第三方源码保留各自原始许可证——Cling UPnP（`org/fourthline/cling/`，LGPL-2.1+/CDDL 双许可，本项目适用其 LGPL 腿，与 GPLv3 兼容）；ZxtMediaRenderer DMR（`com/zxt/dlna/`，源自 TVRemoteIME / GPL-2.0，计划 clean-room 重写，重写完成前不对外分发）；`app/libs/` JAR 多为 Apache-2.0（与 GPLv3 单向兼容），细节见审计文档。
+> **注意**：本项目内嵌的第三方源码保留各自原始许可证——Cling UPnP（`org/fourthline/cling/`，LGPL-2.1+/CDDL 双许可，本项目适用其 LGPL 腿，与 GPLv3 兼容）；DMR 层已按 UPnP 公开规范净室重写为 Kotlin（`com/kbtv/caster/dlna/renderer/`，原 GPL-2.0 来源的 `com/zxt/dlna/` 已删除）；`app/libs/` JAR 多为 Apache-2.0（与 GPLv3 单向兼容，javax.annotation 已 compileOnly 化），细节见审计文档。

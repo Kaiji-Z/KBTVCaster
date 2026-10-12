@@ -10,7 +10,7 @@ import org.mockito.kotlin.mock
 /**
  * Unit tests for [DlnaProtocol]'s command translation.
  *
- * DlnaProtocol implements ZxtMediaPlayer.PlaybackListener: UPnP
+ * DlnaProtocol implements DmrPlaybackListener: UPnP
  * AVTransport events arrive as onPlay/onPause/onStop/onSeek and must be
  * translated into the matching [CastProtocol.PlaybackCommand] and
  * forwarded to the sink. We verify that mapping here.
