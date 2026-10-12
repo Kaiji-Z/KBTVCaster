@@ -6,7 +6,7 @@
 
 手机上的视频 App（B 站、腾讯视频、优酷等）一键把媒体推送到电视播放。
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Android%20TV-green.svg)]()
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9.24-7F52FF.svg)]()
 [![Min SDK](https://img.shields.io/badge/minSDK-23%20(Android%206.0)-orange.svg)]()
@@ -163,6 +163,6 @@ app/src/main/java/com/kbtv/caster/
 
 ## 📄 许可证
 
-[MIT](LICENSE)
+[GPLv3](LICENSE)（2026-10 由 MIT 切换；贡献者与第三方许可证审计见 [docs/LICENSE-SWITCH.md](docs/LICENSE-SWITCH.md)）
 
-> **注意**：本项目内嵌的 Cling UPnP（`org/fourthline.cling.*`）和 ZxtMediaRenderer DMR（`com.zxt.dlna.*`）为第三方源码，许可证请参阅各自目录。
+> **注意**：本项目内嵌的第三方源码保留各自原始许可证——Cling UPnP（`org/fourthline/cling/`，LGPL-2.1+/CDDL 双许可，本项目适用其 LGPL 腿，与 GPLv3 兼容）；ZxtMediaRenderer DMR（`com/zxt/dlna/`，源自 TVRemoteIME / GPL-2.0，计划 clean-room 重写，重写完成前不对外分发）；`app/libs/` JAR 多为 Apache-2.0（与 GPLv3 单向兼容），细节见审计文档。
