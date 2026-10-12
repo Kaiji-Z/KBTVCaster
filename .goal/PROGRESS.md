@@ -229,3 +229,39 @@
 - 过程失败计数：编译错 4 次（import 包名、Enumeration 链式、`isLoopbackAddress` 用错类×2）全部当轮修复
 
 **用户侧清单更新**：真机电视验证已消解；剩余 = iPhone 烟测（B5 后）/ 百度一分钟 / [厂商]抓包十分钟 / 推送一句话 / git 一句话 / A6·friendlyName 两确认。
+
+---
+
+## Round 12（2026-10-13）—— B5 解码路径闭环（判据 4④ 达成，判据 4 全绿）+ [厂商]三道门文档【阶段 B 用量 7/25，总 12/60】
+
+**B5 根因链（MirrorDecodePathTest）**：
+1. 残留 `decoder.configure()` 对已启动 codec 二次调用 → ISE（非缓存问题，栈行号说的是真话）
+2. 8KB 定长 chunk ≈ 6-7 帧/AU，一 chunk 一 PTS → `queuedAt.remove` 每 chunk 仅命中一次 → 46 样本假象（实际 outputs≈300）
+3. 修复：Annex-B 访问单元切分（slice NAL 边界，SPS/PPS 前缀归属后续 AU）→ 每输入 buffer 恰一帧，PTS 一一对应；加在途窗口（MAX_INFLIGHT_AUS=8）防积压污染延迟
+4. 软件解码器显式指定（`c2.android.avc.decoder`，OMX 兜底）——byType 会选 goldfish 硬解（真字节流卡死）
+
+**结果**：`AUs=900 outputs=901 latencies=900`，**p95=76.3-78.5ms < 150ms**，EXIT=0；trace 铁证 `b5_decode_stats frames=900 p95Micros=76323`（am instrument 手动装回 APK 后 run-as 拉取——connectedAndroidTest 跑完自动卸载）。**🎯 判据 4①②③④ 全部达成。**
+
+**D（[厂商]）**：`docs/research/[linkx]-gate-2026-10.md`——三道门判定框架（DLNA 覆盖/AirPlay 覆盖/LeLink 必要性）+ 用户抓包 SOP（60s×2 pcap）+ 净室红线。结论区留白待用户 pcap。
+
+**回归**：JVM 三旗 0 失败；连接测试默认+airplay 双轮 EXIT=0。提交：bd38a30（B5 测试+素材）、09d6f41（[厂商]文档）。
+
+---
+
+## Round 13（2026-10-13）—— A6 净室重写：GPL 层清零 + C1 取证 + javax.annotation 消解【阶段 A 用量 7/12，总 13/60】
+
+**A6（用户已授权「三句话我都同意」）**：
+- 新 `dlna/renderer/`（Kotlin，净室）：RendererDevice（LocalDevice 组装 + LastChange 推送线程，volatile 停机旗标语义保留）/ RendererTransport（AVTransport:1，REL_TIME-only seek 走 ModelUtil.fromTimeString）/ RendererControl（Master 通道音量/静音）/ RendererPlayer（传输状态机 + AudioManager STREAM_MUSIC）/ RendererConnectionManager（sink MIME 清单）；`DlnaBootstrap` 替换 DLNAUtils（Timber 化，UDN/descriptor trace 事件原样保留供控制点脚本）
+- `com/zxt/dlna/**`（10 文件 GPL-2.0 来源）+ `DLNAUtils.java` 整树删除
+- 折叠 C2：friendlyName=ASCII `KBTVCaster`；manufacturer/model 诚实字段（`KBTVCaster Project` / `KBTVCaster DMR` / 版本=versionName），不再冒用 MSI/4thline
+- 死代码随重写消失：GstMediaListener、FileUtil/DevMountInfo/UpnpUtil 控制点侧工具、SharedPreferences 名字后缀特性（无调用方）
+
+**验证**：主源编译过（修正：raw `LocalServiceBinder.read` 泛型、UnsignedIntegerFourBytes Long、Kotlin 属性 getter return）；JVM 三旗 89/89×3 全绿；连接测试默认+airplay 双轮 EXIT=0（真实 SOAP 控制点链路穿透新 renderer）。提交 91cf74a。
+
+**C1 模拟器取证**：描述符 XML 实测（回环流服务 adb forward 拉取，存 temp/descriptor-new.xml）：friendlyName/manufacturer/modelName/modelNumber/modelDescription/X_DLNADOC/X_DLNACAP/UDN 全部达标（§6 表）；UDN 跨进程重启实测稳定。残余变量收窄为 SSDP 节奏（真机抓包）与 _lelink（判据 7）。
+
+**javax.annotation（CDDL）**：唯一引用者为 vendored 死类 ManagedUpnpServiceConfiguration → `compileOnly` 化，APK 不再含 CDDL 字节码；LICENSE-SWITCH §3/§4 更新，分发门禁解除（发布动作仍需用户确认）。
+
+**AGENTS.md**：架构图/结构树/WHERE TO LOOK/GOTCHAS/约定 全部按新现实刷新。
+
+**净判定**：判据 0✅ 1✅ 2✅ 3✅ 4（全四项）✅；5-8 待用户物理动作。agent 可做工作全部完成。
