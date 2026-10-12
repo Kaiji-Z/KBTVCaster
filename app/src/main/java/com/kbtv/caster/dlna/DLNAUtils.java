@@ -89,6 +89,32 @@ public class DLNAUtils {
                 }
 
                 Log.i(TAG, context.getString(R.string.app_name) + " DLNA服务已启动");
+                // Expose the device UDN for the host-side control-point script
+                // (androidTest assets, dlna_control_point.py): it probes
+                // /dev/<UDN>/desc to find the Cling stream port, then drives
+                // SOAP through adb forward.
+                try {
+                    String udn = mMediaRenderer.getDevice().getIdentity().getUdn().toString();
+                    Log.i(TAG, "UPnP device registered, UDN=" + udn);
+                    com.kbtv.caster.trace.TraceRecorder.log(
+                        "upnp_registered",
+                        new kotlin.Pair[]{ new kotlin.Pair<>("udn", udn) }
+                    );
+                    // Ground truth for e2e tooling: the descriptor path Cling itself expects.
+                    try {
+                        java.net.URI descPath = upnpService.getConfiguration()
+                                .getNamespace().getDescriptorPath(mMediaRenderer.getDevice());
+                        Log.i(TAG, "UPnP descriptor path: " + descPath);
+                        com.kbtv.caster.trace.TraceRecorder.log(
+                            "upnp_descriptor_path",
+                            new kotlin.Pair[]{ new kotlin.Pair<>("path", String.valueOf(descPath)) }
+                        );
+                    } catch (Throwable t2) {
+                        Log.w(TAG, "descriptor path unavailable: " + t2);
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "Failed to log UDN: " + t);
+                }
             }
 
             @Override
@@ -98,7 +124,7 @@ public class DLNAUtils {
         };
         mServiceConnection = serviceConnection;
         context.bindService(
-                new Intent(context, AndroidUpnpServiceImpl.class),
+                new Intent(context, KbtvUpnpServiceImpl.class),
                 serviceConnection, Context.BIND_AUTO_CREATE);
     }
 

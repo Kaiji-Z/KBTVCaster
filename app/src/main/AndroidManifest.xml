@@ -53,9 +53,9 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
-        <!-- Android UPnP Service (Cling stack from TVRemoteIME) -->
+        <!-- Android UPnP Service (Cling stack; Kbtv subclass = emulator-tolerant interface filter) -->
         <service
-            android:name="org.fourthline.cling.android.AndroidUpnpServiceImpl"
+            android:name="com.kbtv.caster.dlna.KbtvUpnpServiceImpl"
             android:exported="false" />
 
         <!-- Boot Receiver for auto-start -->

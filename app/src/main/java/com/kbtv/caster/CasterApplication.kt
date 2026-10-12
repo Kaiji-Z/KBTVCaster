@@ -38,6 +38,17 @@ class CasterApplication : Application() {
         createNotificationChannels()
 
         Timber.d("CasterApplication initialized")
+        // Surface vendored Cling's java.util.logging (FINE) in debug builds —
+        // the router's protocol matching is otherwise a black box on Android.
+        if (BuildConfig.DEBUG) {
+            try {
+                java.util.logging.LogManager.getLogManager().getLogger("").apply {
+                    level = java.util.logging.Level.FINE
+                    handlers?.forEach { it.level = java.util.logging.Level.FINE }
+                }
+            } catch (_: Exception) {
+            }
+        }
     }
 
     private fun createNotificationChannels() {
