@@ -30,6 +30,9 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
 
     override val name: String = "AirPlayMirror"
 
+    /** Set by the coordinator when the protocol starts; receives the mirror stream. */
+    var videoOut: MirrorVideoRenderer? = null
+
     private var sink: CastProtocol.PlaybackSink? = null
     private var handle: Long = 0L
     private var nsd: NsdManager? = null
@@ -168,8 +171,7 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
     // ===== RaopCallbackHandler: native events -> trace + coordinator =====
 
     override fun onVideoData(data: ByteArray, ntpTimeNs: Long, isH265: Boolean) {
-        // M3 wires this into MediaCodec surface decoding; counting now as
-        // liveness evidence that the mirror stream is flowing.
+        videoOut?.onFrame(data, ntpTimeNs, isH265)
         mirrorFrames++
         if (mirrorFrames == 1L || mirrorFrames % RENDER_TRACE_EVERY == 0L) {
             TraceRecorder.log("mirror_frame", "n" to mirrorFrames, "h265" to isH265)
@@ -182,6 +184,7 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
 
     override fun onVideoSize(srcW: Float, srcH: Float, w: Float, h: Float) {
         TraceRecorder.log("mirror_video_size", "w" to w, "h" to h)
+        videoOut?.setResolution(w.toInt(), h.toInt())
     }
 
     override fun onVolumeChange(volume: Float) {
@@ -220,6 +223,7 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
 
     override fun onMirrorRunning(running: Boolean) {
         mirrorFrames = 0
+        videoOut?.onSession(running)
         TraceRecorder.log("mirror_session", "running" to running)
         Timber.i("mirror running=$running")
     }

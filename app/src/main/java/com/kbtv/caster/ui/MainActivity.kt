@@ -29,6 +29,7 @@ class MainActivity : AppCompatActivity() {
 
     // UI 元素
     private lateinit var playerView: PlayerView
+    private lateinit var mirrorSurface: android.view.SurfaceView
     private lateinit var standbyUi: View
     private lateinit var seekControlUi: View
     private lateinit var seekBar: SeekBar
@@ -55,6 +56,9 @@ class MainActivity : AppCompatActivity() {
             coordinatorService = binder.getService()
             isBound = true
             setupPlayerView()
+            observeMirrorState()
+            // 绑定晚于 surfaceCreated 的情况：补交一次当前 Surface
+            mirrorSurface.holder.surface?.let { coordinatorService?.mirrorRenderer?.setSurface(it) }
             Timber.d("Service connected")
         }
 
@@ -76,6 +80,20 @@ class MainActivity : AppCompatActivity() {
     private fun initViews() {
         playerView = findViewById(R.id.playerView)
         standbyUi = findViewById(R.id.standbyUi)
+        mirrorSurface = findViewById(R.id.mirrorSurface)
+
+        // 镜像 Surface 生命周期交给 SurfaceHolder 回调：创建/销毁即接入/摘除服务侧解码器
+        mirrorSurface.holder.addCallback(object : android.view.SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: android.view.SurfaceHolder) {
+                coordinatorService?.mirrorRenderer?.setSurface(holder.surface)
+            }
+
+            override fun surfaceChanged(holder: android.view.SurfaceHolder, format: Int, width: Int, height: Int) {}
+
+            override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
+                coordinatorService?.mirrorRenderer?.setSurface(null)
+            }
+        })
 
         // 进度条UI
         seekControlUi = findViewById(R.id.seekControlUi)
@@ -143,16 +161,44 @@ class MainActivity : AppCompatActivity() {
     private fun showVideo() {
         runOnUiThread {
             Timber.d("Showing video, hiding standby UI")
-            playerView.visibility = View.VISIBLE
-            standbyUi.visibility = View.GONE
+            if (mirrorSurface.visibility != View.VISIBLE) {
+                playerView.visibility = View.VISIBLE
+                standbyUi.visibility = View.GONE
+            }
         }
     }
 
     private fun hideVideo() {
         runOnUiThread {
             Timber.d("Hiding video, showing standby UI")
-            playerView.visibility = View.GONE
-            standbyUi.visibility = View.VISIBLE
+            if (mirrorSurface.visibility != View.VISIBLE) {
+                playerView.visibility = View.GONE
+                standbyUi.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    /** 镜像会话状态驱动界面切换：镜像时全屏镜像面，结束后回到播放/待机状态 */
+    private fun observeMirrorState() {
+        coordinatorService?.mirrorRenderer?.rendering?.observe(this) { active ->
+            if (active) {
+                Timber.d("Mirror session active, showing mirror surface")
+                playerView.visibility = View.GONE
+                standbyUi.visibility = View.GONE
+                mirrorSurface.visibility = View.VISIBLE
+            } else {
+                Timber.d("Mirror session ended, hiding mirror surface")
+                mirrorSurface.visibility = View.GONE
+                // 交回播放状态判断：有内容显示播放器，否则待机
+                val player = coordinatorService?.getExoPlayer()
+                if (player != null && player.isPlaying) {
+                    playerView.visibility = View.VISIBLE
+                    standbyUi.visibility = View.GONE
+                } else {
+                    playerView.visibility = View.GONE
+                    standbyUi.visibility = View.VISIBLE
+                }
+            }
         }
     }
 
@@ -344,6 +390,7 @@ class MainActivity : AppCompatActivity() {
         }
         playerListener = null
         playerView.player = null
+        coordinatorService?.mirrorRenderer?.setSurface(null)
         if (isBound) {
             unbindService(serviceConnection)
             isBound = false

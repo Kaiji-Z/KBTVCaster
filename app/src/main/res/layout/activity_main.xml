@@ -129,4 +129,15 @@
 
     </LinearLayout>
 
+    <!-- AirPlay 屏幕镜像渲染面（置于最顶层；会话开始时显示，Surface 送入服务的镜像解码器） -->
+    <SurfaceView
+        android:id="@+id/mirrorSurface"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:visibility="gone" />
+
 </androidx.constraintlayout.widget.ConstraintLayout>

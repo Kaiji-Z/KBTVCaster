@@ -65,6 +65,9 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
     // ExoPlayer for direct playback
     private var exoPlayer: ExoPlayer? = null
 
+    // AirPlay mirror stream decoder; frames arrive via AirPlayMirrorProtocol.videoOut
+    val mirrorRenderer = com.kbtv.caster.airplay.MirrorVideoRenderer()
+
     // Auto-restart handler
     private val restartHandler = android.os.Handler(android.os.Looper.getMainLooper())
     @Volatile private var restartAttempts = 0
@@ -123,6 +126,9 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
             // Start every registered casting protocol (DLNA, future mirror, …)
             protocols.forEach { protocol ->
                 try {
+                    if (protocol is com.kbtv.caster.airplay.AirPlayMirrorProtocol) {
+                        protocol.videoOut = mirrorRenderer
+                    }
                     protocol.start(this, this)
                     TraceRecorder.log("protocol_started", "protocol" to protocol.name)
                 } catch (e: Exception) {
@@ -198,6 +204,8 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
             try { exoPlayer?.release() } catch (e: Exception) { Timber.w("Error releasing ExoPlayer: ${e.message}") }
             exoPlayer = null
             Timber.d("ExoPlayer stopped")
+
+            try { mirrorRenderer.release() } catch (e: Exception) { Timber.w("Error releasing mirror renderer: ${e.message}") }
 
         } catch (e: Exception) {
             Timber.e(e, "Error during stop")
