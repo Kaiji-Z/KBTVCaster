@@ -33,6 +33,15 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
     /** Set by the coordinator when the protocol starts; receives the mirror stream. */
     var videoOut: MirrorVideoRenderer? = null
 
+    /**
+     * Set by the coordinator; invoked with the mirror session state. The
+     * coordinator brings its UI forward when a session starts — the mirror
+     * renders into MainActivity's SurfaceView, which does not exist while
+     * the activity is backgrounded (field TV: 1608 frames dropped, zero
+     * rendered, until the UI returned).
+     */
+    var onMirrorSession: ((Boolean) -> Unit)? = null
+
     private var sink: CastProtocol.PlaybackSink? = null
     private var handle: Long = 0L
     private var nsd: NsdManager? = null
@@ -252,6 +261,11 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
     override fun onMirrorRunning(running: Boolean) {
         mirrorFrames = 0
         videoOut?.onSession(running)
+        try {
+            onMirrorSession?.invoke(running)
+        } catch (e: Exception) {
+            Timber.w(e, "mirror session listener failed")
+        }
         TraceRecorder.log("mirror_session", "running" to running)
         Timber.i("mirror running=$running")
     }
