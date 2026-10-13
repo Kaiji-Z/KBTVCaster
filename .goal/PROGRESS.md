@@ -299,3 +299,18 @@
 **小盒精灵归属修正**：文档全面更正为「另一个 TVRemoteIME 家族项目」。
 
 JVM 三旗全绿；airplay 旗 APK 已上电视（网络侧核验双绿）。**待用户复测**：百度再点一次 KBTVCaster + iPhone 列表。
+
+---
+
+## Round 16（2026-10-13）—— 百度闭环（判据 6 ✅）+ iPhone 可见性四层修复【总 16/60】
+
+**用户复测**：百度网盘选 KBTVCaster **成功播放** —— trace 铁证：`SetAVTransportURI(pan.baidu.com/api/streaming?...type=M3U8_AUTO_1080)` → `play_started` → `state:3` → `is_playing:true`。**正是项目最初要修的 HLS+pan.baidu.com 路径**。🎯 判据 6 达成（真机真 App）。
+
+**iPhone 仍不可见的根因链（四层，逐层剥开）**：
+1. mdnsd 静默：Android 6 系统 mDNS 守护进程注册后只应答一次（PC 多轮实测字节级确认）→ [厂商]自养响应器的原因
+2. 自建响应器（AirPlayMDns，纯 java.net）：发送通/接收死 → **WiFi 驱动组播过滤，需 MulticastLock**
+3. 多网卡坑：networkInterface 需固定主网卡（wlan0>eth0），否则应答从 uap0/p2p0 出去进黑洞
+4. 排障烟雾弹：**我的 PC 探针 QDCOUNT=0**（畸形查询）——修好探针后一切正常；「某次成功」实为旁听它应答 iPhone/mdnsd 的正确查询
+5. 命名冲突回归：API 33 上 NsdManager+自建响应器同实例双播 → mdnsd 改名 → AirPlayE2eTest 断言原名失败（模拟器回归逮住）→ **API<24 才启用自建响应器**分层，模拟器 3/3 复绿
+
+**终态**：真机响应器 wlan0 上对正确查询应答 ×4（TXT: deviceid=真MAC/features=0x77,0x1E/vv=2/flags=0x4）；模拟器 NsdManager 路径不受影响。提交 77520d2。**待用户 iPhone 复测**（注意指引：看视频 App 播放器的 AirPlay 图标列表；控制中心「屏幕镜像」列表按设计不出现——features 不含镜像位）。
