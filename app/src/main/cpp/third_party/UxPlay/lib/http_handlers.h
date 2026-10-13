@@ -18,6 +18,9 @@
 
 #include "airplay_video.h"
 #include "fcup_request.h"
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
 
 static void
 *hls_get_current_video(raop_t *raop) {
@@ -697,6 +700,11 @@ http_handler_play(raop_conn_t *conn, http_request_t *request, http_response_t *r
     int id = -1;
     
     logger_log(raop->logger, LOGGER_DEBUG, "http_handler_play");
+#ifdef __ANDROID__
+    { const char* d=NULL; int dl=-1; d=http_request_get_data(request,&dl);
+      const char* ct=http_request_get_header(request,"Content-Type");
+      __android_log_print(ANDROID_LOG_INFO,"KbtvPlay","entry datalen=%d ctype=%s",dl,ct?ct:"(none)"); }
+#endif
 
     const char* apple_session_id = http_request_get_header(request, "X-Apple-Session-ID");
     if (!apple_session_id) {
@@ -774,8 +782,14 @@ http_handler_play(raop_conn_t *conn, http_request_t *request, http_response_t *r
     }
 
     if (!playback_location || !strlen(playback_location)) {
+#ifdef __ANDROID__
+        __android_log_print(ANDROID_LOG_INFO,"KbtvPlay","play_error: no playback_location parsed");
+#endif
         goto play_error;
     }
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO,"KbtvPlay","parsed location=%s", playback_location);
+#endif
 
     if (!playback_uuid) {
         playback_uuid = strdup(apple_session_id);
@@ -876,13 +890,7 @@ http_handler_play(raop_conn_t *conn, http_request_t *request, http_response_t *r
 	       get_duration(raop->airplay_video[i]));
     }
 #endif
-	   
-    plist_t req_content_location_node = plist_dict_get_item(req_root_node, "Content-Location");
-    if (!req_content_location_node) {
-        goto play_error;
-    } else {
-        plist_get_string_val(req_content_location_node, &playback_location);
-    }
+
     /* we support HLS playlists if the playback location is terminated by "/master.m3u8", otherwise pass location to player */
     const char *uri_suffix = strstr(playback_location, "/master.m3u8");    
     
