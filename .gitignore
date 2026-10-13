@@ -51,3 +51,5 @@ temp/
 # AI coding tool caches
 .opencode/
 .omo/
+app/.cxx/
+app/src/main/cpp/third_party/UxPlay/lib/*.rej

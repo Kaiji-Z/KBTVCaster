@@ -35,14 +35,14 @@ MODULES="no-cast no-md2 no-md4 no-mdc2 no-rc4 no-rc5 no-engine no-idea no-camell
 
 build() { # $1=openssl-target $2=abi-dir
     local target=$1 abi=$2
-    local tc="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
     echo "== building $target -> $abi =="
     make clean >/dev/null 2>&1 || true
-    CC="$tc/aarch64-linux-android23-clang" \
-    AR="$tc/llvm-ar" RANLIB="$tc/llvm-ranlib" \
+    # android-* targets locate the toolchain via ANDROID_NDK_ROOT themselves
+    ANDROID_NDK_ROOT="$NDK" PATH="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH" \
         ./Configure "$target" -D__ANDROID_API__=23 --libdir=lib \
             $MODULES --prefix="$WORK/out-$abi"
-    make -j"$(nproc)" build_sw
+    ANDROID_NDK_ROOT="$NDK" PATH="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH" \
+        make -j"$(nproc)" build_sw
     make install_sw
     mkdir -p "$REPO/app/src/main/cpp/prebuilt/openssl/$abi"
     cp -r "$WORK/out-$abi/include" "$REPO/app/src/main/cpp/prebuilt/openssl/$abi/"
