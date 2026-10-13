@@ -6,6 +6,7 @@ plugins {
 android {
     namespace = "com.kbtv.caster"
     compileSdk = 34
+    ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "com.kbtv.caster"
@@ -21,6 +22,22 @@ android {
         buildConfigField("boolean", "FLAG_PLAYBACK_PLAN_ROUTING", flagPlaybackPlan.toString())
         val flagAirplay = (project.findProperty("kbtv.flags.airplay") as? String)?.toBooleanStrictOrNull() ?: false
         buildConfigField("boolean", "FLAG_AIRPLAY_PROTOCOL", flagAirplay.toString())
+
+        // UxPlay mirror kernel (Phase 2): real TV is arm64, TV emulator x86_64
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        externalNativeBuild {
+            cmake {
+                arguments += "-DANDROID_STL=c++_shared"
+                arguments += "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     buildTypes {

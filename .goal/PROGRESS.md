@@ -314,3 +314,16 @@ JVM 三旗全绿；airplay 旗 APK 已上电视（网络侧核验双绿）。**�
 5. 命名冲突回归：API 33 上 NsdManager+自建响应器同实例双播 → mdnsd 改名 → AirPlayE2eTest 断言原名失败（模拟器回归逮住）→ **API<24 才启用自建响应器**分层，模拟器 3/3 复绿
 
 **终态**：真机响应器 wlan0 上对正确查询应答 ×4（TXT: deviceid=真MAC/features=0x77,0x1E/vv=2/flags=0x4）；模拟器 NsdManager 路径不受影响。提交 77520d2。**待用户 iPhone 复测**（注意指引：看视频 App 播放器的 AirPlay 图标列表；控制中心「屏幕镜像」列表按设计不出现——features 不含镜像位）。
+
+---
+
+## Round 17（2026-10-13）—— Phase 2 开工（M1）：底本 vendor + 首次 native 构建，卡点=宿主 OpenSSL【Phase 2 用量 1/25】
+
+**完成**：
+- 底本 jqssun/android-airplay-server（GPLv3）勘察：视频字节流经 `onVideoData` 上抛 Kotlin（接我们 B5 验证过的 MediaCodec 路线）；audio_engine 为独立 C ABI（可桩化）；dnssd shim=NsdManager 后端（接我们双路 mDNS）
+- vendor：cpp 整树（UxPlay/libplist/openssl-cmake 子模块 @上游 pinned commit；ffmpeg 子模块不取）+ bridge 三 Kotlin（保留原包名保 JNI 符号）→ `app/src/main/cpp/`、`app/src/main/java/io/github/jqssun/airplay/bridge/`
+- 剥离：CMake 去 oboe/ffmpeg；audio_engine_stub.cpp（ABI 同形，M4 换真引擎）
+- gradle：externalNativeBuild + NDK 28.2 + arm64-v8a/x86_64 + ANDROID_STL=c++_shared
+- 首建 12 分钟：**UxPlay 核心+libplist 全部编过（仅警告）**，卡在 openssl-cmake ExternalProject——`./Configure`+make 需 Unix 宿主，Windows cmd 死路
+
+**宿主 make 获取三连败**（按 SPEC 换路线）：choco（非管理员拒）→ SF/gh（页面/无资产）→ msys2 包提取（mingw32-make.exe 三环境静默零输出，疑似被拦）。**R18 起：WSL(Ubuntu 24.04, make/gcc/perl 齐全) + Linux NDK r28b 一次性预编译 OpenSSL → `cpp/prebuilt/openssl/<abi>/libcrypto.a` 进仓库**（app/libs JAR 同模式），CMake 已切 IMPORTED 目标。脚本 `scripts/build-openssl-wsl.sh`（可复现、来源可溯）。
