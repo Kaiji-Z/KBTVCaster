@@ -284,3 +284,18 @@
 **[厂商]门更新（eb8d466）**：电视自带 [vendor] [VendorCast] → 门 3 预判不触发，待用户手机列表一句话确认。
 
 **用户剩余**：iPhone 一按（电视已可见）/ 百度列表一扫 / git push 一句话。
+
+---
+
+## Round 15（2026-10-13）—— 用户真机实测三情报 → 两修复上机【总 15/60】
+
+**用户实测反馈**：①iPhone 只见「[预装投屏]M0」不见 KBTVCaster；②百度列表**可见 KBTVCaster**（发现层修复实证 ✓）但「已连接」后不播，M0 可播；③澄清「小盒精灵」是别的项目非本项目旧版。
+
+**取证（ADB 仍在手）**：trace 显示百度对我们只发 Stop×3、零 SetAVTransportURI；logcat 显示[厂商] SDK 的 SetAVTransportURI×5（540ms 重试风暴）发给了「小盒精灵」(pid 2837, GstAVTransportService 标签=TVRemoteIME 家族)。推送 URI 携带 `protocolInfo="http-get:*:video/mp4:DLNA.ORG_PN=MP3;..."` → [厂商]按 **PN profile 匹配 Sink**，我们的裸 MIME 清单被判「不支持」→ 不推。
+
+**修复一（播放）**：RendererConnectionManager SinkProtocolInfo 裸 MIME → **25 条含 DLNA.ORG_PN profile + 万能通配符 `http-get:*:*:*`**。网络侧 GetProtocolInfo 实测：通配符在列、PN 在列。
+**修复二（iPhone 可见）**：AirPlay TXT deviceid 从 UUID → **MAC 格式**（真机读到 wlan0 真 MAC 70:20:84:…；兜底 ANDROID_ID MD5 六字节），补 features=0x77（仅推送不含镜像）+ flags；_raop 补 pw/cn/ch/et。mDNS 实测 TXT 齐备。
+**回退记录**：曾把百度 UA 扩到 pcs.baidu.com 渐进式 → 双旗回归测试（FeatureFlagsTest 路由矩阵）逮住与 legacy 分歧 → 按证据驱动原则回退（签名 URL 自带鉴权，先让推送能到达；若复测 403 再加），pcs 行为留回归用例。
+**小盒精灵归属修正**：文档全面更正为「另一个 TVRemoteIME 家族项目」。
+
+JVM 三旗全绿；airplay 旗 APK 已上电视（网络侧核验双绿）。**待用户复测**：百度再点一次 KBTVCaster + iPhone 列表。
