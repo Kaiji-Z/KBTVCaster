@@ -7,7 +7,7 @@ import android.net.nsd.NsdServiceInfo
 import com.kbtv.caster.service.protocol.CastProtocol
 import com.kbtv.caster.trace.TraceRecorder
 import timber.log.Timber
-import java.util.UUID
+import java.util.Collections
 
 /**
  * AirPlay receiving protocol — URL-push subset in this round; screen
@@ -65,7 +65,10 @@ class AirPlayProtocol : CastProtocol {
     private fun registerNsd(context: Context, port: Int) {
         val nsd = context.getSystemService(Context.NSD_SERVICE) as NsdManager
         nsdManager = nsd
-        val deviceId = UUID.randomUUID().toString()
+        // iOS senders ignore AirPlay devices whose deviceid is not MAC-shaped
+        // and whose TXT lacks a features bitmap (measured 2026-10-13: iPhone
+        // listed only the TV's built-in stack, not us).
+        val deviceId = macShapedDeviceId(context)
 
         // Both record types point at the same HTTP surface; real receivers
         // split airplay/raop ports, but one socket is sufficient for push.
@@ -80,6 +83,16 @@ class AirPlayProtocol : CastProtocol {
                 setAttribute("deviceid", deviceId)
                 setAttribute("srcvers", "220.68")
                 setAttribute("model", MODEL)
+                if (type.startsWith("_airplay")) {
+                    // 0x77 = photo/video/slideshow push, no screen mirroring.
+                    setAttribute("features", "0x77")
+                    setAttribute("flags", "0x44")
+                } else {
+                    setAttribute("pw", "false")
+                    setAttribute("cn", "0,1,2,3")
+                    setAttribute("ch", "2")
+                    setAttribute("et", "0,1")
+                }
             }
             val listener = object : NsdManager.RegistrationListener {
                 override fun onServiceRegistered(serviceInfo: NsdServiceInfo) {
@@ -112,6 +125,27 @@ class AirPlayProtocol : CastProtocol {
             is AirPlayIntent.SeekSec ->
                 sink.onCommand(CastProtocol.PlaybackCommand.Seek((intent.positionSec * 1000).toLong()))
         }
+    }
+
+    /**
+     * MAC-shaped stable device id: the wlan MAC when readable, else six MD5
+     * bytes of ANDROID_ID formatted as a MAC. Shape (not authenticity) is
+     * what iOS discovery checks.
+     */
+    private fun macShapedDeviceId(context: Context): String {
+        val real = try {
+            val faces = Collections.list(java.net.NetworkInterface.getNetworkInterfaces())
+            faces.firstOrNull { it.name == "wlan0" || it.name == "eth0" }
+                ?.hardwareAddress?.takeIf { it.size == 6 }
+        } catch (e: Exception) {
+            null
+        }
+        if (real != null) return real.joinToString(":") { String.format("%02X", it) }
+        val seed = android.provider.Settings.Secure.getString(
+            context.contentResolver, android.provider.Settings.Secure.ANDROID_ID,
+        ) ?: "KBTVCaster"
+        val hash = java.security.MessageDigest.getInstance("MD5").digest(seed.toByteArray())
+        return (0 until 6).joinToString(":") { String.format("%02X", hash[it]) }
     }
 
     companion object {
