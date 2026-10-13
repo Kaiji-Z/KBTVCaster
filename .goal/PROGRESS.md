@@ -265,3 +265,22 @@
 **AGENTS.md**：架构图/结构树/WHERE TO LOOK/GOTCHAS/约定 全部按新现实刷新。
 
 **净判定**：判据 0✅ 1✅ 2✅ 3✅ 4（全四项）✅；5-8 待用户物理动作。agent 可做工作全部完成。
+
+---
+
+## Round 14（2026-10-13）—— 真机电视全链路：ADB 接通 + SOAP 点播出画面 + AirPlay 可见【总 14/60】
+
+**接通过程**：旧记录 IP .49 已失效（DHCP）；用户给新 IP .24。当贝桌面「USB调试」不开 TCP 5555；用户开系统开关后 5555 通（此固件 Android 6.0/MRA58K/arm64，API 23=恰好 minSdk）。全端口扫描定位过 3 个厂商 DMR（B站官方「我的小电视」:9958 / **[厂商] [VendorCast]「[预装投屏]M0」:49152** / 旧版「小盒精灵」:52946——MSI MediaRenderer+modelNumber 1+Cling 路径三重铁证）。
+
+**SSDP 多播坑**：交换机 IGMP snooping 剪枝——必须 IP_ADD_MEMBERSHIP 加组后 M-SEARCH 才有应答（先前成功是泛洪窗口运气）。
+
+**真机全链路验证（新净室 renderer）**：
+- SSDP 发现第四接收端 KBTVCaster（UDN 与 trace 一致）+ 描述符字段核验（与模拟器字节级一致，2130B）
+- 真实 SOAP SetAVTransportURI(file:///sdcard/kbtv_test.mp4)+Play → 200/200 → trace: play_started → playback_state=3(READY) → **is_playing=true，电视屏幕实际播放**（ExoPlayer→OMX.MS.AVC.Decoder 硬解+Surface 产品路径）
+- **AirPlay 旗变体上真机**：_airplay/_raop 双注册（port 60012），PC 侧 mDNS PTR 查询电视应答 KBTVCaster → **iPhone 隔空列表即见**
+
+**解码测试加固（真机暴露两 bug，已修，017aadf）**：API 23 无 Codec2；OMX 软解吃 900 帧吐 1 帧、MStar 硬解裸 buffer 模式吐 4 帧——但绑 Surface 后正常（产品路径无此问题）。修复：csd-0/1 进 format（OMX 时代需要）+ 喂帧 120s 死线（防在途门空转）+ 真机 byType 优先（产品同路径）。真机 decode-to-buffer 判定：该固件 OMX 不适用，判据 4④ 仍以 TV 模拟器（c2.android.avc.decoder 900 帧 p95 76ms）为准。
+
+**[厂商]门更新（eb8d466）**：电视自带 [vendor] [VendorCast] → 门 3 预判不触发，待用户手机列表一句话确认。
+
+**用户剩余**：iPhone 一按（电视已可见）/ 百度列表一扫 / git push 一句话。
