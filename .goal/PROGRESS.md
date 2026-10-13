@@ -382,3 +382,15 @@ JVM 三旗全绿；airplay 旗 APK 已上电视（网络侧核验双绿）。**�
 - **提交**：75ea5c2（构建+预制品，stub 删除）、f12764e（协议音频接线）。
 - **用户约束（本轮收到）**：电视正在被使用——**未经用户明确允许不得 adb 连接/安装/打扰真电视**。M2/M3 真机步骤全部挂起待用户发话。
 - 真机剩余（等用户）：M2 三步（安装/TXT 探针/iPhone 列表确认）、M3 判据 4（≥300 帧 p95<150ms + 断连重连，需真 iPhone）、M5 终验。
+
+---
+
+## Round 24（2026-10-14）—— M2 真机达成：Android 6 电视上原生栈+TXT 镜像位全线验证【Phase 2 用量 8/25】
+
+- **装机**：用户允许后 adb 连接（中途 TV 网络栈掉线一次：待机重启致 adbd 关闭，用户重新开启网络调试恢复）。混三 ABI 35MB 包在濒死链路上传 12 分钟失败；新增 `-Pkbtv.build.abi=<abi>` 单 ABI 构建（a95e085），18.9MB 57 秒装完。
+- **原生栈**：API 23 真机 `airplay_mirror_started port=7000 features=0x5A7FFEF7`；DLNA 并行无冲突。
+- **hls 位广告缺陷修复（740ed5f）**：shim 在 nativeStart 注册时快照 TXT，之后 `nativeSetHlsEnabled` 改 features 不再进缓存记录 → 挪到 start 之前。修复前后空口对比：`0x5A7FFEE6 → 0x5A7FFEF7`（bit0 视频/bit4 HLS/bit7 镜像全亮）。
+- **PC 探针（判据 2 证据）**：`temp/probe_mdns.py`（QDCOUNT 教训 + IP_ADD_MEMBERSHIP 教训内建；SRV 端口偏移 rdata[4:6]）——PTR `KBTVCaster._airplay._tcp.local`（应答方 192.168.0.24）、TXT features=0x5A7FFEF7 deviceid=70:20:84:a6:9d:bc、SRV port=7000；RAOP `702084A69DBC@KBTVCaster` 同样在线。
+- **已知瑕疵（不阻塞）**：API<24 双路注册时系统 mdnsd 与自研响应器抢名，mdnsd 侧改名 "KBTVCaster (2)"；空口实际由响应器以正名应答（探针证实）。待观察是否影响 iPhone 显示，必要时 API<24 跳过 NsdManager。
+- **回归**：模拟器全套 androidTest 7/7（hls 顺序调整后复跑）。
+- **待用户**：iPhone 控制中心「屏幕镜像」列表确认（判据 2 后半）；随后 M3 真机镜像实测（MainActivity 已在前台，SurfaceView 就绪）。
