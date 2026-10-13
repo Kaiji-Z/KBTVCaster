@@ -63,6 +63,8 @@ android {
     buildFeatures {
         viewBinding = true
         buildConfig = true
+        // oboe audio library is consumed via prefab from its AAR
+        prefab = true
     }
 
     lint {
@@ -111,6 +113,9 @@ dependencies {
 
     // Logging
     implementation("com.jakewharton.timber:timber:5.0.1")
+
+    // Low-latency audio output for the AirPlay mirror kernel (prefab)
+    implementation("com.google.oboe:oboe:1.9.3")
 
     // ExoPlayer for media playback
     implementation("androidx.media3:media3-exoplayer:1.2.1")

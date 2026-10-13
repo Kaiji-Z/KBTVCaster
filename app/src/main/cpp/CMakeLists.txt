@@ -38,8 +38,25 @@ if(SANITIZE)
     add_link_options(${SANITIZE_LDFLAGS})
 endif()
 
-# ---------- Audio (M1 stub) ----------
-# oboe + ffmpeg (ALAC soft decode) return with the real audio_engine in M4.
+# ---------- Audio: oboe (prefab AAR) + ffmpeg (prebuilt, ALAC soft decode) ----------
+# ffmpeg cross-built once in WSL (scripts/build-ffmpeg-wsl.sh) with the same
+# configure as upstream cmake/BuildFFmpeg.cmake: --disable-all
+# --enable-avcodec --enable-decoder=alac, pinned to the upstream submodule
+# commit (LGPL subset). Consumed via IMPORTED targets like OpenSSL above.
+find_package(oboe REQUIRED CONFIG)
+set(KBTV_FFMPEG_PREBUILT ${CMAKE_CURRENT_SOURCE_DIR}/prebuilt/ffmpeg/${ANDROID_ABI})
+if(NOT EXISTS ${KBTV_FFMPEG_PREBUILT}/lib/libavcodec.a)
+    message(FATAL_ERROR "prebuilt ffmpeg missing for ${ANDROID_ABI}: ${KBTV_FFMPEG_PREBUILT}")
+endif()
+add_library(ffmpeg::avutil STATIC IMPORTED)
+set_target_properties(ffmpeg::avutil PROPERTIES
+    IMPORTED_LOCATION ${KBTV_FFMPEG_PREBUILT}/lib/libavutil.a
+    INTERFACE_INCLUDE_DIRECTORIES ${KBTV_FFMPEG_PREBUILT}/include)
+add_library(ffmpeg::avcodec STATIC IMPORTED)
+set_target_properties(ffmpeg::avcodec PROPERTIES
+    IMPORTED_LOCATION ${KBTV_FFMPEG_PREBUILT}/lib/libavcodec.a
+    INTERFACE_INCLUDE_DIRECTORIES ${KBTV_FFMPEG_PREBUILT}/include
+    INTERFACE_LINK_LIBRARIES ffmpeg::avutil)
 
 # ---------- libplist (built from submodule source) ----------
 set(PLIST_SRC third_party/libplist/src)
@@ -121,7 +138,7 @@ set(BRIDGE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/android_dnssd_shim.c
     ${CMAKE_CURRENT_SOURCE_DIR}/android_raop_callbacks.c
     ${CMAKE_CURRENT_SOURCE_DIR}/native_bridge.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/audio_engine_stub.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/audio_engine.cpp
 )
 
 # ---------- Final shared library ----------
@@ -150,6 +167,9 @@ target_link_libraries(airplay_native
     playfair
     crypto
     plist
+    oboe::oboe
+    ffmpeg::avcodec
+    mediandk
     m
     log
     android

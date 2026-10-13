@@ -1,0 +1,14 @@
+prefix=/tmp/tmp.2u5pWLTG6G/out-arm64-v8a
+exec_prefix=${prefix}
+libdir=/tmp/tmp.2u5pWLTG6G/out-arm64-v8a/lib
+includedir=/tmp/tmp.2u5pWLTG6G/out-arm64-v8a/include
+
+Name: libavcodec
+Description: FFmpeg codec library
+Version: 62.28.102
+Requires: libavutil >= 60.26.102
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavcodec -pthread -lm -latomic
+Libs.private: 
+Cflags: -I${includedir}

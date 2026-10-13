@@ -1,0 +1,14 @@
+prefix=/tmp/tmp.2u5pWLTG6G/out-arm64-v8a
+exec_prefix=${prefix}
+libdir=/tmp/tmp.2u5pWLTG6G/out-arm64-v8a/lib
+includedir=/tmp/tmp.2u5pWLTG6G/out-arm64-v8a/include
+
+Name: libavutil
+Description: FFmpeg utility library
+Version: 60.26.102
+Requires: 
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavutil -lm -latomic -landroid -lmediandk -pthread
+Libs.private: 
+Cflags: -I${includedir}
