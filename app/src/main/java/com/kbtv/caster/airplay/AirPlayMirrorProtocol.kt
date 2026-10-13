@@ -66,6 +66,12 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
             NativeBridge.nativeSetLang(handle, "", "", java.util.Locale.getDefault().toLanguageTag())
             NativeBridge.nativeSetAudioEnabled(handle, true)
             NativeBridge.nativeSetPlist(handle, "maxFPS", MAX_FPS)
+            // Gate raop.c's CSeq-less video path: without this the kernel drops
+            // URL-push /play requests ("ignoring AirPlay video streaming
+            // request"). Must run BEFORE nativeStart: the shim snapshots the
+            // TXT records (incl. features bits 0/4) when registering inside
+            // start, and later feature updates never reach the cached TXT.
+            NativeBridge.nativeSetHlsEnabled(handle, true)
             val port = NativeBridge.nativeStart(handle, PORT)
             if (port < 0) {
                 Timber.e("nativeStart failed on port $PORT")
@@ -74,10 +80,6 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
                 handle = 0L
                 return
             }
-            // Gate raop.c's CSeq-less video path: without this the kernel drops
-            // URL-push /play requests ("ignoring AirPlay video streaming
-            // request") and the TXT loses the video features bits 0/4.
-            NativeBridge.nativeSetHlsEnabled(handle, true)
 
             val airplayTxt = NativeBridge.nativeGetAirplayTxtRecords(handle).orEmpty()
             val raopTxt = NativeBridge.nativeGetRaopTxtRecords(handle).orEmpty()
