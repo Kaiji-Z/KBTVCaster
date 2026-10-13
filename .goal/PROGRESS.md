@@ -340,3 +340,25 @@ JVM 三旗全绿；airplay 旗 APK 已上电视（网络侧核验双绿）。**�
 
 **提交**：06051c9（vendor：UxPlay@pin+6补丁、libplist@f41b1ea、prebuilt OpenSSL、bridge Kotlin）、7cf126e（构建接线：CMake IMPORTED、gradle externalNativeBuild、audio_engine_stub）。
 **M1 尾巴**：System.loadLibrary 冒烟归入 M2 首次接线（NativeBridge init 即冒烟）。
+
+---
+
+## Round 19（2026-10-13）—— M2 深潜：/play 五连坑全数定位（llhttp Host→hls 门→RAOP 类型→UUID 长度→10s 响应窗）【Phase 2 用量 3/25】
+
+模拟器 e2e `POST /play` 无响应→逐层根因（每层独立复现）：
+1. **llhttp 要 Host**：HTTP/1.1 无 Host 头解析不过（连接挂起无响应）→ 测试加 `Host:`。真客户端必带。
+2. **raop.c:264 门**：无 CSeq 请求在路由前被丢（"ignoring AirPlay video streaming request"），除非 hls plist 开启 → `nativeSetHlsEnabled(handle, true)`（bridge 两侧本就现成，jqssun 留的口子）。hls 开启同时置 TXT features bit0/4（视频推送能力广告）。
+3. **连接类型互斥**（raop.c:273-300）：首请求带 CSeq→RAOP 型（session 不落 conn）；带 X-Apple-Session-ID 无 CSeq→AIRPLAY 型（session 落 conn）。**两者同发→raop.c:402 `assert(strcmp(hdr, conn->client_session_id=NULL))` SIGSEGV**（符号化实证）→ 测试定型：Host + X-Apple-Session-ID、无 CSeq。这是上游设计而非 bug：镜像走 RAOP 型、URL 推送走 AIRPLAY 型，真客户端两种形态不同连接。
+4. **set_apple_session_id 断言 len==36**：session id 必须 UUID 形 → 测试改 `6b74c239-6652-4a3e-9c1f-8e2d5a7b9c01`。
+5. **/play 响应固有 ~10s 延迟**（回调即时、响应在内部 HLS 处理窗后）：soTimeout 10s 卡边界竞态 → 30s。全套首跑 1 挂即此因，非回归。
+
+## Round 20（2026-10-13）—— M2 模拟器侧达成：e2e 3/3 + 全套 6/6（DLNA 零回归）【Phase 2 用量 4/25】
+
+- **KbtvPlay 探针链亮**：`entry datalen=77 ctype=text/parameters` → `parsed location=...cast-test.wav` → `HTTP/1.1 200 OK` → trace `mirror_video_play{uri}` → `is_playing:true`。原生内核完整接管 URL 推送，ExoPlayer 正常驱动。
+- 全套（3 AirPlay e2e + 3 DLNA e2e）`OK (6 tests)`；libcrypto.a arm64/x86_64 非确定性重建噪音已还原（只留新增 x86）。
+- **提交**：70dea63（x86 ABI+预制品）、aca2966（http_handlers 文本主体修复+探针：陈旧 Content-Location 块对 text 体重解析必 play_error，已删）、e1f47c2（协议接线+e2e）。
+
+## Round 21（2026-10-13）—— M2 阻塞项盘点 + M3 预研启动【Phase 2 用量 5/25】
+
+- 真电视 192.168.0.24:5555 不可达（待机，需用户遥控唤醒）→ M2 真机三步（安装/TXT 探针/iPhone 列表确认）挂起待用户。
+- JVM 单测回归跑批中；M3（onVideoData→MediaCodec(surface)→SurfaceView）开题。
