@@ -327,3 +327,16 @@ JVM 三旗全绿；airplay 旗 APK 已上电视（网络侧核验双绿）。**�
 - 首建 12 分钟：**UxPlay 核心+libplist 全部编过（仅警告）**，卡在 openssl-cmake ExternalProject——`./Configure`+make 需 Unix 宿主，Windows cmd 死路
 
 **宿主 make 获取三连败**（按 SPEC 换路线）：choco（非管理员拒）→ SF/gh（页面/无资产）→ msys2 包提取（mingw32-make.exe 三环境静默零输出，疑似被拦）。**R18 起：WSL(Ubuntu 24.04, make/gcc/perl 齐全) + Linux NDK r28b 一次性预编译 OpenSSL → `cpp/prebuilt/openssl/<abi>/libcrypto.a` 进仓库**（app/libs JAR 同模式），CMake 已切 IMPORTED 目标。脚本 `scripts/build-openssl-wsl.sh`（可复现、来源可溯）。
+
+---
+
+## Round 18（2026-10-13）—— M1 达成：UxPlay 内核编译通过，.so 双 ABI 进 APK【Phase 2 用量 2/25】
+
+**判据 1 ✅**：`assembleDebug` EXIT=0；APK 含 `lib/arm64-v8a/libairplay_native.so`(5.2MB)、`lib/x86_64/libairplay_native.so`(5.5MB) + libc++_shared。JVM 默认旗回归 EXIT=0。
+
+**OpenSSL 预制品路线落地**：WSL(Ubuntu 24.04)+Linux NDK r28b 交叉编译 3.4.4（android-arm64/x86_64，API 23，上游同款模块裁剪），`cpp/prebuilt/openssl/<abi>/libcrypto.a`（各 ~9.5MB）进仓库；CMake 切 IMPORTED 目标；`scripts/build-openssl-wsl.sh` 可复现。宿主侧 openssl-cmake/ExternalProject 弃用（树已删）。首坑：openssl android 目标必须 `ANDROID_NDK_ROOT` 自寻工具链。
+
+**补丁漂移手工合入记录**（jqssun 补丁集 vs 上游 UxPlay pin）：6 补丁中 4 hunk 拒绝——3 个为「目标代码已漂移」（删的块不存在/上下文位移，含 raop.c 一处 video_play_conn 置空缺失，记录待察），1 个为 `_raw_copy_playlist` 函数定义（引用 5 处）——已按 .rej 内容手工插入 airplay_video.c。**过程坑**：本环境 bash heredoc 吃反斜杠（`\n`→换行、`\0`→NUL），改走 Write 工具落 .py 脚本执行；git apply 在本机报 OK 不落盘（junction C:/D: 单文件系统相关），统一用 `patch -p1`；UxPlay 源被 CRLF 化需先 sed 去 CR。用户澄清：**user 目录实为 D 盘，C 盘是 junction**（解释了所有 D: 路径日志）。
+
+**提交**：06051c9（vendor：UxPlay@pin+6补丁、libplist@f41b1ea、prebuilt OpenSSL、bridge Kotlin）、7cf126e（构建接线：CMake IMPORTED、gradle externalNativeBuild、audio_engine_stub）。
+**M1 尾巴**：System.loadLibrary 冒烟归入 M2 首次接线（NativeBridge init 即冒烟）。
