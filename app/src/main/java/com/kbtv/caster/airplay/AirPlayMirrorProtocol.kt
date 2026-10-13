@@ -46,6 +46,14 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
         try {
             val appContext = context.applicationContext
             val keyFile = appContext.filesDir.resolve("airplay.pem").absolutePath
+            // oboe's OpenSL ES backend (pre-AAudio devices, like the Android 6
+            // field TV) cannot discover native rate/burst itself; hand it the
+            // AudioManager values so low-latency buffer sizing works there.
+            val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+            NativeBridge.nativeSetDefaultStreamValues(
+                audioManager.getProperty(android.media.AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull() ?: 0,
+                audioManager.getProperty(android.media.AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)?.toIntOrNull() ?: 0,
+            )
             handle = NativeBridge.nativeInit(this, hwAddress(appContext), SERVICE_NAME, keyFile, false, false)
             if (handle == 0L) {
                 Timber.e("nativeInit failed")
@@ -54,6 +62,10 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
             }
             val dm = appContext.resources.displayMetrics
             NativeBridge.nativeSetDisplaySize(handle, dm.widthPixels, dm.heightPixels, MAX_FPS)
+            NativeBridge.nativeSetCodecs(handle, true, true)
+            NativeBridge.nativeSetLang(handle, "", "", java.util.Locale.getDefault().toLanguageTag())
+            NativeBridge.nativeSetAudioEnabled(handle, true)
+            NativeBridge.nativeSetPlist(handle, "maxFPS", MAX_FPS)
             val port = NativeBridge.nativeStart(handle, PORT)
             if (port < 0) {
                 Timber.e("nativeStart failed on port $PORT")
@@ -180,6 +192,15 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
 
     override fun onAudioFormat(ct: Int, spf: Int, usingScreen: Boolean) {
         Timber.d("onAudioFormat ct=$ct spf=$spf screen=$usingScreen")
+        // Open playout first, then declare the codec (upstream order; the
+        // native start is idempotent, teardown closes the stream).
+        try {
+            NativeBridge.nativeServerAudioStart(handle)
+            NativeBridge.nativeServerAudioFormat(handle, ct, spf)
+            TraceRecorder.log("mirror_audio_format", "ct" to ct, "spf" to spf, "screen" to usingScreen)
+        } catch (e: Exception) {
+            Timber.e(e, "audio start failed")
+        }
     }
 
     override fun onVideoSize(srcW: Float, srcH: Float, w: Float, h: Float) {
@@ -194,6 +215,11 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
     override fun onClientVolume(): Float = 0f
 
     override fun onAudioTeardown() {
+        try {
+            NativeBridge.nativeServerAudioStop(handle)
+        } catch (e: Exception) {
+            Timber.w(e, "audio stop failed")
+        }
         TraceRecorder.log("mirror_audio_teardown")
     }
 
