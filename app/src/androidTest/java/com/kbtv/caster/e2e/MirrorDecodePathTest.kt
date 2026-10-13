@@ -65,6 +65,10 @@ class MirrorDecodePathTest {
     /** Decode the canned stream, returning per-frame latencies in nanoseconds. */
     private fun decodeAndMeasure(stream: ByteArray): List<Long> {
         val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, WIDTH, HEIGHT)
+        // OMX-era decoders (Android <= 9) need the parameter sets as csd-0/1
+        // in the format rather than (only) in-band.
+        nalOfType(stream, NAL_SPS)?.let { format.setByteBuffer("csd-0", java.nio.ByteBuffer.wrap(it)) }
+        nalOfType(stream, NAL_PPS)?.let { format.setByteBuffer("csd-1", java.nio.ByteBuffer.wrap(it)) }
         // Explicit software decoder: byType prefers c2.goldfish.h264.decoder on
         // emulators, which stalls on real byte-streams (queue timeout →
         // UNKNOWN_ERROR). c2.android.avc.decoder is the software workhorse.
@@ -99,7 +103,10 @@ class MirrorDecodePathTest {
             }
         }
 
-        while (auIndex < accessUnits.size) {
+        // Deadline guard: a decoder that never frees input buffers would
+        // otherwise spin the in-flight gate forever (seen on an API 23 OMX).
+        val feedDeadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(FEED_DEADLINE_MS)
+        while (auIndex < accessUnits.size && System.nanoTime() < feedDeadline) {
             if (queuedAt.size < MAX_INFLIGHT_AUS) {
                 val inIndex = decoder.dequeueInputBuffer(10_000)
                 if (inIndex >= 0) {
@@ -164,6 +171,22 @@ class MirrorDecodePathTest {
     }
 
     private fun createSoftwareAvcDecoder(format: MediaFormat): MediaCodec {
+        // On real devices try the production path first: byType picks the
+        // vendor hardware decoder, exactly what ExoPlayer would use. Only on
+        // emulators is byType wrong (c2.goldfish.h264.decoder stalls on real
+        // byte-streams), so there we go straight to software candidates.
+        val emulator = android.os.Build.HARDWARE.let { it.contains("goldfish") || it.contains("ranchu") }
+        if (!emulator) {
+            try {
+                val codec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+                codec.configure(format, null, null, 0)
+                codec.start()
+                Log.w(TAG, "decoder byType: ${codec.name}")
+                return codec
+            } catch (e: Exception) {
+                Log.w(TAG, "decoder byType unavailable: ${e.message}")
+            }
+        }
         val candidates = listOf("c2.android.avc.decoder", "OMX.google.h264.decoder")
         var lastError: Exception? = null
         for (name in candidates) {
@@ -180,13 +203,42 @@ class MirrorDecodePathTest {
         throw AssertionError("no software AVC decoder available", lastError)
     }
 
+    /** First NAL of [type] (with its Annex-B start code), or null. */
+    private fun nalOfType(stream: ByteArray, type: Int): ByteArray? {
+        var i = 0
+        while (i + 3 < stream.size) {
+            if (stream[i] == 0.toByte() && stream[i + 1] == 0.toByte() && stream[i + 2] == 1.toByte()) {
+                val codeStart = if (i > 0 && stream[i - 1] == 0.toByte()) i - 1 else i
+                if (stream[i + 3].toInt() and 0x1F == type) {
+                    var j = i + 3
+                    var end = stream.size
+                    while (j + 3 < stream.size) {
+                        if (stream[j] == 0.toByte() && stream[j + 1] == 0.toByte() && stream[j + 2] == 1.toByte()) {
+                            end = if (j > 0 && stream[j - 1] == 0.toByte()) j - 1 else j
+                            break
+                        }
+                        j++
+                    }
+                    return stream.copyOfRange(codeStart, end)
+                }
+                i += 3
+            } else {
+                i++
+            }
+        }
+        return null
+    }
+
     companion object {
+        const val NAL_SPS = 7
+        const val NAL_PPS = 8
         const val TAG = "MirrorDecodePath"
         const val WIDTH = 320
         const val HEIGHT = 192
         const val MIN_FRAMES = 100
         const val MAX_INFLIGHT_AUS = 8
         const val TAIL_DRAIN_TIMEOUT_MS = 10_000L
+        const val FEED_DEADLINE_MS = 120_000L
         const val PTS_STEP_USEC = 33_333L
     }
 }
