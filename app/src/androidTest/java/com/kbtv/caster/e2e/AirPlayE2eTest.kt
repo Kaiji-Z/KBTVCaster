@@ -10,7 +10,6 @@ import android.os.IBinder
 import androidx.media3.common.Player
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.kbtv.caster.airplay.AirPlayProtocol
 import com.kbtv.caster.service.CastCoordinatorService
 import com.kbtv.caster.service.protocol.FeatureFlags
 import org.junit.After
@@ -37,6 +36,10 @@ import java.util.concurrent.TimeUnit
 @RunWith(AndroidJUnit4::class)
 class AirPlayE2eTest {
 
+    private companion object {
+        const val SERVICE_NAME = "KBTVCaster"
+    }
+
     private val context: Context
         get() = InstrumentationRegistry.getInstrumentation().targetContext
 
@@ -58,8 +61,9 @@ class AirPlayE2eTest {
         val service = startAndBindService()
         awaitStatus(service, CastCoordinatorService.ServiceStatus.RUNNING)
 
-        discoverWithin10s("_airplay._tcp.", AirPlayProtocol.SERVICE_NAME)
-        discoverWithin10s("_raop._tcp.", AirPlayProtocol.SERVICE_NAME + "-raop")
+        // Native stack naming: airplay "KBTVCaster", raop "<MAC>@KBTVCaster".
+        discoverWithin10s("_airplay._tcp.")
+        discoverWithin10s("_raop._tcp.")
     }
 
     @Test
@@ -95,17 +99,37 @@ class AirPlayE2eTest {
                 })
             }
 
-            val body = "<plist><dict><key>Content-Location</key><string>${media.url()}</string>" +
-                "<key>Start-Position</key><real>0.0</real></dict></plist>"
-            val request = "POST /play HTTP/1.1\r\nContent-Length: ${body.length}\r\n" +
-                "Content-Type: text/x-apple-plist+xml\r\n\r\n$body"
+            // The native play handler's text branch parses "Key: value" lines
+            // (binary plists take the other branch); match that wire format.
+            // Header set mimics the AirPlay-video client shape the kernel is
+            // designed for: X-Apple-Session-ID (required by the handler, and
+            // it makes hls_request false so /play routes to http_handler_play)
+            // but NO CSeq — a CSeq on the first request types the connection
+            // RAOP, the session id never gets stored, and raop.c:402 then
+            // asserts against NULL. Requires nativeSetHlsEnabled(true), or
+            // raop.c:264 drops CSeq-less requests outright.
+            val body = "Content-Location: ${media.url()}\r\nStart-Position: 0.0\r\n"
+            // Session id must be a 36-char UUID — set_apple_session_id()
+            // asserts on the exact length, matching real client behavior.
+            val request = "POST /play HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: ${body.toByteArray().size}\r\n" +
+                "Content-Type: text/parameters\r\nX-Apple-Session-ID: 6b74c239-6652-4a3e-9c1f-8e2d5a7b9c01\r\n\r\n$body"
             Socket("127.0.0.1", port).use { socket ->
-                socket.soTimeout = 10_000
+                // The kernel's /play handler returns its 200 only after an
+                // internal ~10s HLS processing window (the playback callback
+                // itself fires immediately); read timeout must clear that.
+                socket.soTimeout = 30_000
                 socket.getOutputStream().apply {
                     write(request.toByteArray(StandardCharsets.ISO_8859_1))
                     flush()
                 }
-                socket.shutdownOutput()
+                // Keep the connection open: half-closing makes the native
+                // httpd treat the request as an aborted connection.
+                val statusLine = socket.getInputStream().bufferedReader().readLine()
+                android.util.Log.i("AirPlayE2e", "/play response: $statusLine")
+                assertTrue(
+                    "/play was not accepted: $statusLine",
+                    statusLine != null && statusLine.contains("200")
+                )
             }
 
             assertTrue("STATE_READY within 60s", ready.await(60, TimeUnit.SECONDS))
@@ -138,7 +162,7 @@ class AirPlayE2eTest {
         }
         awaitStatus(service, CastCoordinatorService.ServiceStatus.RUNNING)
 
-        discoverWithin10s("_airplay._tcp.", AirPlayProtocol.SERVICE_NAME)
+        discoverWithin10s("_airplay._tcp.")
     }
 
     // ===== helpers =====
@@ -184,7 +208,7 @@ class AirPlayE2eTest {
         assertTrue("serviceStatus never reached $expected within ${timeoutSec}s", ok)
     }
 
-    private fun discoverWithin10s(type: String, expectName: String) {
+    private fun discoverWithin10s(type: String) {
         val nsd = context.getSystemService(Context.NSD_SERVICE) as NsdManager
         val found = CountDownLatch(1)
         val listener = object : NsdManager.DiscoveryListener {
@@ -194,7 +218,7 @@ class AirPlayE2eTest {
             }
 
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                if (serviceInfo.serviceName == expectName) found.countDown()
+                if (serviceInfo.serviceName.contains(SERVICE_NAME)) found.countDown()
             }
 
             override fun onServiceLost(serviceInfo: NsdServiceInfo) {}
@@ -204,13 +228,13 @@ class AirPlayE2eTest {
         nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, listener)
         val ok = found.await(10, TimeUnit.SECONDS)
         try { nsd.stopServiceDiscovery(listener) } catch (_: Exception) {}
-        assertTrue("mDNS service '$expectName' ($type) not found within 10s", ok)
+        assertTrue("mDNS service containing '$SERVICE_NAME' ($type) not found within 10s", ok)
     }
 
-    /** The service logs the ephemeral AirPlayServer port into the JSONL trace. */
+    /** The protocol logs the native AirPlay port into the JSONL trace. */
     private fun awaitAirPlayPort(timeoutSec: Long = 15): Int {
         val trace = File(File(context.filesDir, "trace"), "cast.jsonl")
-        val pattern = Regex("\"event\":\"airplay_started\",\"port\":(\\d+)")
+        val pattern = Regex("\"event\":\"airplay_mirror_started\",\"port\":(\\d+)")
         val deadline = System.currentTimeMillis() + timeoutSec * 1000
         while (System.currentTimeMillis() < deadline) {
             val text = if (trace.isFile) trace.readText() else ""
@@ -218,6 +242,6 @@ class AirPlayE2eTest {
             if (match != null) return match.groupValues[1].toInt()
             Thread.sleep(200)
         }
-        throw AssertionError("airplay_started not found in trace within ${timeoutSec}s")
+        throw AssertionError("airplay_mirror_started not found in trace within ${timeoutSec}s")
     }
 }

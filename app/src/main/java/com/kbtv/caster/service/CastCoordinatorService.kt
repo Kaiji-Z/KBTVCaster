@@ -46,7 +46,7 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
 
     /** Registered casting protocols. AirPlay is flag-gated; default off reproduces pre-change behavior. */
     private val protocols: List<CastProtocol> =
-        if (FeatureFlags.airplayProtocol) listOf(DlnaProtocol(), com.kbtv.caster.airplay.AirPlayProtocol())
+        if (FeatureFlags.airplayProtocol) listOf(DlnaProtocol(), com.kbtv.caster.airplay.AirPlayMirrorProtocol())
         else listOf(DlnaProtocol())
 
     // Service status
