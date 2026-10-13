@@ -372,3 +372,13 @@ JVM 三旗全绿；airplay 旗 APK 已上电视（网络侧核验双绿）。**�
 - 无头 e2e `MirrorRenderPathTest`（ImageReader 扮演 Surface 消费者；注意解码器输出 YV12，RGBA_8888 会被 nativeImageSetup 拒）。全套 androidTest **7/7**（3 AirPlay + 3 DLNA + 1 渲染路径）。
 - **提交**：3182b43（renderer+测试）、38d4a62（协议/服务/UI 接线）。
 - 阻塞不变：真电视待机（M2 真机三步 + M3 真机判据 4 待用户唤醒电视；iPhone 场景需用户配合）。
+
+---
+
+## Round 23（2026-10-13）—— M4 模拟器侧达成：真音频引擎进包（oboe prefab + ffmpeg ALAC 预制品）【Phase 2 用量 7/25】
+
+- **ffmpeg 预制品**：`scripts/build-ffmpeg-wsl.sh`（上游 BuildFFmpeg.cmake 同参数：--disable-all --enable-avcodec --enable-decoder=alac、pin 上游子模块 commit、LGPL 子集），WSL/Linux-NDK(/tmp/android-ndk-r28b) 三 ABI 一次过（各 ~2.8MB：libavcodec+libavutil+headers）。AAC-ELD/LC 走 NdkMediaCodec，ffmpeg 只服务软件 ALAC。
+- **接线**：gradle prefab+oboe 1.9.3（上游同版）；CMake 换 audio_engine_stub→audio_engine.cpp + IMPORTED ffmpeg 目标 + mediandk；协议侧按上游时序：nativeSetDefaultStreamValues(AudioManager 采样率/帧突发)→init→SetCodecs(alac,aac)/SetLang/SetAudioEnabled/SetPlist(maxFPS)，onAudioFormat→nativeServerAudioStart+Format，onAudioTeardown→Stop。**一次编链通过**，全套 androidTest **7/7**。
+- **提交**：75ea5c2（构建+预制品，stub 删除）、f12764e（协议音频接线）。
+- **用户约束（本轮收到）**：电视正在被使用——**未经用户明确允许不得 adb 连接/安装/打扰真电视**。M2/M3 真机步骤全部挂起待用户发话。
+- 真机剩余（等用户）：M2 三步（安装/TXT 探针/iPhone 列表确认）、M3 判据 4（≥300 帧 p95<150ms + 断连重连，需真 iPhone）、M5 终验。
