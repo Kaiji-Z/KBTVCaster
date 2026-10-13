@@ -362,3 +362,13 @@ JVM 三旗全绿；airplay 旗 APK 已上电视（网络侧核验双绿）。**�
 
 - 真电视 192.168.0.24:5555 不可达（待机，需用户遥控唤醒）→ M2 真机三步（安装/TXT 探针/iPhone 列表确认）挂起待用户。
 - JVM 单测回归跑批中；M3（onVideoData→MediaCodec(surface)→SurfaceView）开题。
+
+---
+
+## Round 22（2026-10-13）—— M3 模拟器侧达成：镜像流全链路渲到 Surface，p95 148ms【Phase 2 用量 6/25】
+
+- **MirrorVideoRenderer**（新，B5 配方产品化）：每镜像会话一个 MediaCodec；csd-0/1 进 MediaFormat（Android 6 OMX 实测必需）；真机 byType 优先、模拟器软件解码回退；有界待处理队列丢弃陈旧 NAL；解码即渲（releaseOutputBuffer(render=true)）。首版空闲 poll 50ms 只在喂入后 drain → 稳态积压 ~7 帧（p95=221ms 实测暴露）→ 改为每次唤醒都 drain + 5ms 空载 poll → **p95=147.6ms**（模拟器软件解码器，已入 150ms 判据线内）、898 帧 0 丢帧。
+- 接线：协议 onVideoData/onVideoSize/onMirrorRunning → renderer；服务持有 renderer 并随协议启动注入；MainActivity 顶层 SurfaceView（会话渲染时切换显示，SurfaceHolder 回调接入/摘除）。
+- 无头 e2e `MirrorRenderPathTest`（ImageReader 扮演 Surface 消费者；注意解码器输出 YV12，RGBA_8888 会被 nativeImageSetup 拒）。全套 androidTest **7/7**（3 AirPlay + 3 DLNA + 1 渲染路径）。
+- **提交**：3182b43（renderer+测试）、38d4a62（协议/服务/UI 接线）。
+- 阻塞不变：真电视待机（M2 真机三步 + M3 真机判据 4 待用户唤醒电视；iPhone 场景需用户配合）。
