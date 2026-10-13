@@ -23,8 +23,8 @@ android {
         val flagAirplay = (project.findProperty("kbtv.flags.airplay") as? String)?.toBooleanStrictOrNull() ?: false
         buildConfigField("boolean", "FLAG_AIRPLAY_PROTOCOL", flagAirplay.toString())
 
-        // UxPlay mirror kernel (Phase 2): real TV is arm64, TV emulator x86_64
-        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        // UxPlay mirror kernel (Phase 2): real TV is arm64, TV emulator x86 (32-bit)
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64", "x86") }
         externalNativeBuild {
             cmake {
                 arguments += "-DANDROID_STL=c++_shared"
