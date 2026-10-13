@@ -80,6 +80,16 @@ class PlaybackPlanTest {
     }
 
     @Test
+    fun `baidu pcs signed-url push stays progressive without UA`() {
+        // The DLNA push URL (d.pcs.baidu.com, field-measured 2026-10-13) is
+        // signed and self-contained; UA override remains HLS-path-only until
+        // a real 403 proves otherwise.
+        val plan = PlaybackPlan.forUri("https://d.pcs.baidu.com/file/abc?sign=xyz&expires=8h")
+        assertEquals(PlaybackPlan.SourceType.PROGRESSIVE, plan.sourceType)
+        assertFalse(plan.usesBaiduUa)
+    }
+
+    @Test
     fun `substring false positive my3u8file must stay progressive`() {
         val plan = PlaybackPlan.forUri("http://example.com/my3u8file")
         assertEquals(PlaybackPlan.SourceType.PROGRESSIVE, plan.sourceType)
