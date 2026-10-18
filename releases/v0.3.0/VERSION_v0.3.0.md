@@ -6,7 +6,22 @@
 
 ## What's New
 
-<EDIT ME — summarize the changes from the commits below>
+### AirPlay 屏幕镜像（实验性，flag 门控）
+
+- 内嵌 [UxPlay](https://github.com/antimof/UxPlay) 内核（C，GPLv3）并移植到 Android NDK：`libairplay_native` 经 `NativeBridge`（JNI）驱动，iOS 设备在控制中心「屏幕镜像」里直接可见、可连接
+- mDNS 双路注册：NsdManager + 自带应答器（兼容 Android 6），iOS 级 TXT 特征位（含 HLS/镜像位）
+- `MirrorVideoRenderer`：逐 NAL 喂入 MediaCodec 硬解渲染（模拟器自动回退软解），模拟器端到端 900 帧零丢帧、帧延迟 p95 ≈ 148ms
+- 音频引擎：AAC-ELD/LC（NdkMediaCodec）+ ALAC（最小 FFmpeg 子集预编译）+ oboe 低延迟输出
+- 修复：`/play` 文本请求处理（vendored llhttp 路径）、镜像会话自动把播放界面带到前台
+- 默认不注册，需 `-Pkbtv.flags.airplay=true` 构建开启（Releases 附 `app-debug-airplay.apk`）
+
+### 稳定性 / 工程
+
+- 净室重写 DMR 层：删除 GPL-2.0 来源的 `com/zxt/dlna/`，替换为 Kotlin `dlna/renderer/`，许可证切换至 **GPLv3**（审计见 `docs/LICENSE-SWITCH.md`）
+- 验证体系：39 个 JVM 单测 + 7 个端到端 androidTest（DLNA 控制点模拟 + AirPlay HTTP e2e + 镜像解码路径），flag off/on 双跑
+- 结构化运行记录（`trace/TraceRecorder`，JSONL）、单 ABI 构建（`-Pkbtv.build.abi`，网络 adb 安装提速）
+- 待机界面重做：渐变底 + 投屏图标 + 实时服务状态胶囊
+- CI：master 推送跑构建+单测（flag off/on）；`v*` tag 自动构建双 APK 挂 GitHub Release（`scripts/release.sh` 一条命令发版）
 
 ## Recent Commits
 
