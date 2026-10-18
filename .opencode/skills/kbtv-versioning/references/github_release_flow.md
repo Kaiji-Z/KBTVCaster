@@ -1,112 +1,57 @@
-# GitHub Release Workflow
+# GitHub Release Flow (tag → Actions → Release)
 
 ## Overview
 
-This skill supports publishing releases to GitHub with automatic fallback to local archives.
+Releases are **built by CI, not on the laptop**. The pipeline:
 
-## Publishing Options
+```
+scripts/release.sh X.Y.Z
+  └─ git push origin master vX.Y.Z
+       └─ .github/workflows/release.yml (on: push tags v*)
+            ├─ assembleDebug                              → app-debug.apk
+            ├─ assembleDebug -Pkbtv.flags.airplay=true    → app-debug-airplay.apk
+            └─ softprops/action-gh-release@v2
+                 ├─ body: releases/vX.Y.Z/VERSION_vX.Y.Z.md (project changelog)
+                 ├─ generate_release_notes: true (GitHub commit notes appended)
+                 └─ files: both APKs
+```
 
-### Option 1: GitHub Releases (Primary)
+## Requirements
 
-Requires:
-- `gh` CLI installed and authenticated
-- Network connectivity to GitHub
-- Repository write permissions
+- Tag must match `v*` and be pushed to `origin` (annotated tags from release.sh)
+- Workflow needs `permissions: contents: write` (already set in release.yml)
+- `gh` CLI authenticated locally — only for *monitoring*; the Release itself is created by CI with the repo's own `GITHUB_TOKEN`
 
-Commands used:
+## Monitoring
+
 ```bash
-# Check authentication
-gh auth status
+# live log of the release build
+gh run watch --workflow=release.yml
 
-# Create release from tag
-gh release create v1.0.0 --title "Release v1.0.0" --notes "$(cat CHANGELOG.md)"
+# list recent runs
+gh run list --workflow=release.yml --limit 3
+
+# the finished release
+gh release view vX.Y.Z
 ```
 
-### Option 2: Local Archive (Fallback)
+## Failure Handling
 
-When GitHub is unavailable, the skill creates a local archive:
+| Symptom | What to do |
+|---|---|
+| Build step fails (compile/lint) | Open the run log: `gh run view <id> --log-failed`; fix on master, re-tag: delete remote+local tag, re-run release.sh steps (or move the tag) |
+| Release publish fails, build OK | Usually a permissions problem — check `permissions: contents: write` survived; re-run the job: `gh run rerun <id> --failed` |
+| Push failed (offline) | Nothing was lost: commit+tag are local. Push later: `git push origin master vX.Y.Z`; CI then builds normally |
+| Wrong tag content published | `gh release delete vX.Y.Z`, `git push origin :refs/tags/vX.Y.Z`, fix, re-tag and push |
 
-```
-releases/
-├── v1.0.0/
-│   ├── project-1.0.0.tar.gz    # Project snapshot
-│   ├── VERSION_v1.0.0.md       # Changelog
-│   └── manifest.json           # Release metadata
-└── INDEX.md                    # Release index
-```
+## Break-glass: manual release (no CI)
 
-## Release Process Flow
+If Actions is unavailable, the old local path still works:
 
-```
-1. Analyze changes
-   ↓
-2. Determine version (user confirms)
-   ↓
-3. Create git commit
-   ↓
-4. Create git tag
-   ↓
-5. Generate changelog (VERSION_v{x.x.x}.md)
-   ↓
-6. Commit changelog
-   ↓
-7. Update tag (include changelog)
-   ↓
-8. Try GitHub release
-   ↓
-   ├─→ Success → ✅ Done
-   ↓
-   Failed → Create local archive → ✅ Done
-```
-
-## Handling Network Issues
-
-The skill automatically detects network problems:
-
-1. **Network unreachable**: Fallback to local archive immediately
-2. **GitHub API error**: Retry once, then fallback
-3. **gh CLI not installed**: Skip GitHub, use local archive
-
-## Best Practices
-
-### Before Creating Release
-
-- [ ] All tests pass
-- [ ] No uncommitted changes (or committed)
-- [ ] Changelog reviewed
-- [ ] Version number confirmed
-
-### Release Checklist
-
-- [ ] Tag points to correct commit
-- [ ] Changelog includes all changes
-- [ ] Release notes are clear
-- [ ] Version is properly semantic
-
-## Troubleshooting
-
-### "gh: command not found"
-
-Install GitHub CLI:
-- **macOS**: `brew install gh`
-- **Linux**: `apt install gh` or `yum install gh`
-- **Windows**: `winget install GitHub.cli`
-
-### "gh: authentication failed"
-
-Authenticate:
 ```bash
-gh auth login
+./gradlew assembleDebug
+gh release create vX.Y.Z app/build/outputs/apk/debug/app-debug.apk \
+  --title "Release vX.Y.Z" --notes "$(cat releases/vX.Y.Z/VERSION_vX.Y.Z.md)"
 ```
 
-### "remote: Repository not found"
-
-Check repository URL and permissions.
-
-### Tag already exists
-
-Delete existing tag and recreate:
-```bash
-git tag -d v1.0.0
-git tag -a v1.0.0 -m "Release v1.0.0"
-```
+Note: this bypasses the airplay-variant build and the CI environment — prefer fixing CI over using this.

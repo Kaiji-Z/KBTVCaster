@@ -1,6 +1,6 @@
 ---
 name: kbtv-versioning
-description: KBTVCaster Android project version management. Record releases with semantic versioning, git tags, and changelogs tailored for Android/Kotlin projects. Use when user wants to (1) document KBTVCaster stable releases with DLNA/UPnP casting features, (2) create git tags for Android APK releases, (3) publish to GitHub with automatic local fallback, (4) rollback to previous versions, or (5) archive project snapshots. Customized for KBTVCaster project structure and versioning conventions. Trigger phrases: 记录项目, record project, version, 版本, create release, 发布版本, 归档项目, archive project, rollback, 回滚, KBTV版本, KBTVCaster发布.
+description: KBTVCaster Android project version management. Record releases with semantic versioning, git tags, and workflow-driven changelogs tailored for Android/Kotlin projects. Use when user wants to (1) document KBTVCaster stable releases with DLNA/AirPlay casting features, (2) create git tags for Android APK releases, (3) publish GitHub Releases built by CI, (4) rollback to previous versions. Customized for KBTVCaster project structure and versioning conventions. Trigger phrases: 记录项目, record project, version, 版本, create release, 发布版本, 发版, rollback, 回滚, KBTV版本, KBTVCaster发布.
 license: MIT
 compatibility: opencode
 metadata:
@@ -10,74 +10,58 @@ metadata:
 
 ## What I Do
 
-I manage KBTVCaster Android project versions throughout the development lifecycle:
+I manage KBTVCaster versions throughout the development lifecycle:
 
-- **Android Release Management**: Analyze changes in Kotlin/Java code, determine semantic version for APK releases
-- **Changelog Generation**: Create VERSION_v{x.x.x}.md with DLNA/UPnP, ExoPlayer, and Android-specific features
-- **Release Publishing**: Publish Android APK releases to GitHub with automatic local archive fallback
-- **Project Archiving**: Create point-in-time snapshots of KBTVCaster source code and build configs
-- **Version Rollback**: Safely rollback to previous stable releases via git tags
+- **Version determination**: Analyze changes since the last tag, suggest a SemVer bump
+- **Release execution**: Drive `scripts/release.sh` (repo root), which bumps `versionName`/`versionCode`, writes the changelog, commits, tags, and pushes
+- **CI-built releases**: Pushing a `v*` tag triggers `.github/workflows/release.yml`, which builds both APK variants and publishes them to a GitHub Release — no local APK builds, no local tarball archives
+- **Rollback**: Guide checkout/reset to a previous tag
 
 ## When to Use Me
 
-Use this skill when user asks to:
-
 | Request Type | Examples |
 |--------------|----------|
-| Record version | "记录项目", "record project", "version", "版本", "create release", "发布版本", "KBTV版本", "标记KBTV版本" |
-| Archive project | "归档项目", "archive project", "snapshot project" |
-| Rollback version | "rollback", "回滚", "revert to previous version" |
-| Create release | "发布新版本", "create a release", "标记版本", "KBTVCaster发布" |
+| Record version | "记录项目", "record project", "version", "版本", "标记版本" |
+| Create release | "发布新版本", "create a release", "发版", "KBTVCaster发布" |
 | Android specific | "APK版本", "Android发布", "new release" |
+| Rollback version | "rollback", "回滚", "revert to previous version" |
 
-## Workflow
+## Release Flow (2026-10 modernization)
 
-### Version Recording (Semi-Automated)
+```
+1. Analyze changes since last tag        (git log v<prev>..HEAD)
+2. Suggest SemVer bump, WAIT for user confirmation
+3. User confirms version X.Y.Z
+4. Run: scripts/release.sh X.Y.Z
+     ├─ preflight: clean tree, on master, tag unused, gh authed
+     ├─ bump app/build.gradle.kts (versionName + versionCode)
+     ├─ changelog releases/vX.Y.Z/VERSION_vX.Y.Z.md
+     │    missing → scaffold + commit bump, STOP for human editing,
+     │    rerun scripts/release.sh X.Y.Z after editing
+     ├─ append releases/INDEX.md entry + manifest.json
+     ├─ commit "Release X.Y.Z", annotated tag vX.Y.Z
+     └─ push origin master vX.Y.Z   ← tag push triggers CI
+5. GitHub Actions (.github/workflows/release.yml):
+     ├─ assembleDebug            → app-debug.apk        (DLNA 稳定版)
+     ├─ assembleDebug -Pkbtv.flags.airplay=true
+                                 → app-debug-airplay.apk (实验性镜像)
+     └─ GitHub Release: changelog as body + auto notes + both APKs
+6. Verify: gh run watch --workflow=release.yml, then gh release view vX.Y.Z
+```
 
-1. **Analyze changes** since last version
-2. **Suggest version bump** (major/minor/patch/prerelease)
-3. **Wait for user confirmation** before proceeding
-4. **Execute release**:
-   - Create git commit
-   - Create annotated tag
-   - Generate changelog
-   - Commit changelog
-   - Update tag to include changelog
-   - Publish to GitHub (or local archive fallback)
+### Key principles
 
-### Project Archiving
-
-1. Capture git state (commit, branch, status)
-2. Archive project files
-3. Create manifest with metadata
-4. Update archives index
-
-### Rollback
-
-1. List available versions
-2. Confirm target version
-3. Checkout and hard reset to target
+- **Always confirm the version** with the user before running release.sh
+- **Changelog is human-written** — the scaffold's "What's New" must be edited by a person before the release goes out
+- **The tag is the release trigger** — nothing publishes without pushing the tag
+- **Offline? Push later.** The commit+tag stay local; `git push origin master vX.Y.Z` whenever network returns, and CI picks it up then. No tarball fallback anymore.
 
 ## KBTVCaster Project Specifics
 
-This skill is customized for the KBTVCaster Android DLNA/UPnP casting application:
-
-- **Version Format**: Follows Android app conventions (e.g., v0.1.1, v1.0.0)
-- **Changelog Categories**:
-  - DLNA/UPnP casting features
-  - ExoPlayer media playback improvements
-  - Android service lifecycle changes
-  - NSD/SSDP discovery updates
-- **Build Integration**: Works with Gradle build system and APK outputs
-- **Release Notes**: Include feature highlights like device discovery, playback control, and service stability
-
-## Key Principles
-
-- **Always confirm version** before creating release (semi-automated)
-- **Generate changelog first** - works offline
-- **Try GitHub first, fallback to local** - network resilient
-- **Tag before pushing** - safe if network fails mid-release
-- **Include rollback commands** - in every changelog
+- **Version lives in** `app/build.gradle.kts` (`versionName` + `versionCode`; release.sh auto-increments the code)
+- **Changelogs**: `releases/v<X.Y.Z>/VERSION_v<X.Y.Z>.md`, indexed in `releases/INDEX.md`
+- **APK artifacts are CI-built** — never commit APKs; users download them from the GitHub Release
+- **Release notes content**: DLNA/AirPlay casting features, ExoPlayer playback, service lifecycle, NSD/SSDP/mDNS discovery, plus the experimental-flag status of AirPlay mirroring
 
 ## Bundled Resources
 
@@ -87,83 +71,61 @@ This skill is customized for the KBTVCaster Android DLNA/UPnP casting applicatio
 |--------|---------|
 | `scripts/analyze_changes.sh` | Analyze git changes since last version |
 | `scripts/determine_version.sh` | Calculate next version based on change type |
-| `scripts/create_commit.sh` | Create git commit for release |
-| `scripts/create_tag.sh` | Create annotated git tag |
-| `scripts/generate_changelog.sh` | Generate VERSION_v{x.x.x}.md |
-| `scripts/publish_release.sh` | Publish to GitHub or create local archive |
 | `scripts/rollback.sh` | Interactive rollback to previous version |
-| `scripts/archive_project.sh` | Archive project at current state |
+
+> The commit/tag/changelog/publish steps are owned by the repo-level `scripts/release.sh` (single entry point, keeps skill scripts from drifting out of sync with the workflow). The old `create_commit.sh` / `create_tag.sh` / `generate_changelog.sh` / `publish_release.sh` / `archive_project.sh` were removed in the 2026-10 modernization.
 
 ### References
 
 | File | When to Read |
 |------|--------------|
-| `references/semantic_versioning.md` | Understanding SemVer rules and version bump guidelines |
-| `references/github_release_flow.md` | GitHub release process and requirements |
-| `references/fallback_procedure.md` | Network failure handling and local archive recovery |
+| `references/semantic_versioning.md` | SemVer rules and bump guidelines |
+| `references/github_release_flow.md` | How the tag→workflow→Release pipeline works, monitoring, failure handling |
 | `references/rollback_procedures.md` | Rollback methods and safety checks |
 
 ### Assets
 
 | File | Purpose |
 |------|---------|
-| `assets/changelog_template.md` | Template for VERSION_v{x.x.x}.md |
-| `assets/archive_template.md` | Template for project archives |
+| `assets/changelog_template.md` | Long-form template if you prefer writing the changelog by hand instead of editing the scaffold |
 
 ## Example Interaction
 
 ```
-User: "记录项目"
+User: "发版"
 System: Analyzes changes...
-  Latest tag: v0.1.1
-  Commits since: 5
-  Changed files: 12
+  Latest tag: v0.2.1
+  Commits since: 40+ (AirPlay mirror stack, UI redesign, CI release pipeline)
+  Suggestion: Minor version bump (0.2.1 → 0.3.0)
 
-  Suggestion: Minor version bump (0.1.1 → 0.1.2)
-
-  Plan:
-  1. Create commit: "Release v0.1.2"
-  2. Create tag: v0.1.2
-  3. Generate changelog: VERSION_v0.1.2.md
-  4. Publish to GitHub (fallback to local archive)
-
-  Proceed with this plan? (confirm with "同意" or provide different version)
+  Plan: scripts/release.sh 0.3.0
+  Proceed with this plan? (confirm with "同意" or provide a different version)
 
 User: "同意"
-System: [Executes all steps]
-  ✅ Created commit: abc1234
-  ✅ Created tag: v0.1.2
-  ✅ Created changelog: VERSION_v0.1.2.md
-  ✅ Published to GitHub Releases (or local archive)
+System:
+  $ scripts/release.sh 0.3.0
+  ... (first run scaffolds the changelog and stops)
+  [edits releases/v0.3.0/VERSION_v0.3.0.md What's New]
+  $ scripts/release.sh 0.3.0
+  ... (commits, tags v0.3.0, pushes; CI builds APKs)
+  $ gh run watch --workflow=release.yml
+  ✅ Release v0.3.0 live with app-debug.apk + app-debug-airplay.apk
 ```
 
 ## Output Format
 
 On success:
 ```
-✅ KBTVCaster version v{x.x.x} recorded successfully!
+✅ KBTVCaster version v{x.x.x} released!
 
 Git:
-- Commit: {hash}
-- Tag: v{x.x.x}
+- Release commit: {hash}, tag: v{x.x.x} (pushed)
 
-Files:
-- VERSION_v{x.x.x}.md
+CI:
+- Workflow run: {run_url}
+- Artifacts: app-debug.apk, app-debug-airplay.apk on the GitHub Release
 
 Rollback:
 git checkout v{x.x.x}
 git reset --hard v{x.x.x}
-```
-
-On GitHub publish failure (fallback):
-```
-⚠️ GitHub unavailable, created local archive instead
-
-Local Archive:
-- releases/v{x.x.x}/project-{x.x.x}.tar.gz
-- releases/v{x.x.x}/VERSION_v{x.x.x}.md
-- releases/v{x.x.x}/manifest.json
-
-Sync to GitHub when online:
-gh release create v{x.x.x} --notes "$(cat VERSION_v{x.x.x}.md)"
 ```
