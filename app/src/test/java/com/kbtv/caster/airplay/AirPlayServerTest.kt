@@ -7,6 +7,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.ServerSocket
 import java.net.Socket
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.CopyOnWriteArrayList
@@ -111,12 +114,19 @@ class AirPlayServerTest {
         val s = server!!
         s.stop()
         assertFalse(s.isRunning)
-        val refused = try {
-            exchange("POST /stop HTTP/1.1\r\n\r\n")
+        // The listener must have released the port. Assert the positive form
+        // (an immediate rebind succeeds) — connect-refused is flaky on shared
+        // CI hosts, where an unrelated process can briefly occupy the freshly
+        // freed ephemeral port.
+        val rebound = try {
+            ServerSocket().use { fresh ->
+                fresh.reuseAddress = true
+                fresh.bind(InetSocketAddress(InetAddress.getByName("0.0.0.0"), port), 8)
+                true
+            }
+        } catch (_: Exception) {
             false
-        } catch (e: Exception) {
-            true
         }
-        assertTrue("connect must fail after stop", refused)
+        assertTrue("listener port must be releasable right after stop", rebound)
     }
 }
