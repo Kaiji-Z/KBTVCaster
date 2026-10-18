@@ -62,7 +62,7 @@ if [ ! -f "$CHANGELOG" ]; then
     echo "## Recent Commits"
     echo
     echo '```'
-    git log --oneline "$RANGE" | head -40
+    git log --oneline -n 40 "$RANGE"
     echo '```'
     echo
     echo "## Rollback"
