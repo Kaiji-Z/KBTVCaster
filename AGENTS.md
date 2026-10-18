@@ -1,10 +1,10 @@
 # AGENTS.md - KBTVCaster
 
-**Updated:** 2026-10-13 | **Branch:** master
+**Updated:** 2026-10-18 | **Branch:** master
 
-Android TV **DLNA 投屏接收端**：基于 Cling UPnP 栈的 MediaRenderer，接收手机视频 App 推送的媒体 URL，用 Media3 ExoPlayer 播放。前台服务 + 开机自启。
+Android TV **投屏接收端**：DLNA（基于 Cling UPnP 栈的 MediaRenderer，接收手机视频 App 推送的媒体 URL，用 Media3 ExoPlayer 播放）+ AirPlay 屏幕镜像（UxPlay 内核，实验性，flag 门控）。前台服务 + 开机自启。
 
-**只做 DLNA 媒体投屏，不做屏幕镜像。** 详见 README「关于屏幕镜像」。架构上已抽象 `CastProtocol` 接口，未来镜像协议可插拔。
+**DLNA 投屏稳定；AirPlay 镜像实验性**（`-Pkbtv.flags.airplay=true` 构建，详见 README「关于屏幕镜像」）。架构上以 `CastProtocol` 接口承载两种协议，未来协议可插拔。
 
 ## MANDATORY PROTOCOL
 
@@ -188,7 +188,7 @@ class FooTest {
 | 4 | flag 机制（Gradle 属性或 BuildConfig 字段，同套件 on/off 对比） | P1 | 待修复 |
 | 5 | 抽纯函数 PlaybackPlan(uri)→{sourceType, ua}，Service 只执行 | P1 | 待修复 |
 | 6 | LLM 裁判设计 | P1 | ✅ 裁定不需要（确定性断言） |
-| 7 | CI（.github/workflows 跑 test + lint） | P2 | 待修复 |
+| 7 | CI（.github/workflows 跑 test + lint） | P2 | ✅ 已落地（android.yml：test + assembleDebug，flag off/on 双跑；release.yml：tag→APK→GitHub Release） |
 | 8 | lint 升级为阻塞门禁 | P2 | 可选 |
 
 ## GIT
