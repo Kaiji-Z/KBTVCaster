@@ -31,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var playerView: PlayerView
     private lateinit var mirrorSurface: android.view.SurfaceView
     private lateinit var standbyUi: View
+    private lateinit var standbyStatus: TextView
     private lateinit var seekControlUi: View
     private lateinit var seekBar: SeekBar
     private lateinit var currentTime: TextView
@@ -57,6 +58,7 @@ class MainActivity : AppCompatActivity() {
             isBound = true
             setupPlayerView()
             observeMirrorState()
+            observeServiceStatus()
             // 绑定晚于 surfaceCreated 的情况：补交一次当前 Surface
             mirrorSurface.holder.surface?.let { coordinatorService?.mirrorRenderer?.setSurface(it) }
             Timber.d("Service connected")
@@ -102,6 +104,7 @@ class MainActivity : AppCompatActivity() {
         totalTime = findViewById(R.id.totalTime)
 
         // 确保待机界面可见
+        standbyStatus = findViewById(R.id.standbyStatus)
         Timber.d("Standby UI visibility: ${standbyUi.visibility}")
         Timber.d("PlayerView visibility: ${playerView.visibility}")
     }
@@ -175,6 +178,23 @@ class MainActivity : AppCompatActivity() {
                 playerView.visibility = View.GONE
                 standbyUi.visibility = View.VISIBLE
             }
+        }
+    }
+
+    /** 待机页服务状态胶囊：跟随 CastCoordinatorService 的生命周期状态 */
+    private fun observeServiceStatus() {
+        coordinatorService?.serviceStatus?.observe(this) { status ->
+            val (textRes, color) = when (status) {
+                CastCoordinatorService.ServiceStatus.RUNNING ->
+                    R.string.service_running to 0xFF7BD88F.toInt()
+                CastCoordinatorService.ServiceStatus.ERROR ->
+                    R.string.service_error to 0xFFFF7A74.toInt()
+                else -> R.string.starting_service to 0xFFE8C46B.toInt()
+            }
+            standbyStatus.setText(textRes)
+            standbyStatus.setTextColor(color)
+            standbyStatus.compoundDrawables[0]?.mutate()?.setTint(color)
+            Timber.d("Service status: $status")
         }
     }
 

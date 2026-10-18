@@ -4,7 +4,8 @@
     <string name="app_name">凯机投屏</string>
 
     <!-- 待机界面 -->
-    <string name="tv_standby_title">凯机投屏！启动！</string>
+    <string name="tv_standby_title">凯机投屏</string>
+    <string name="tv_standby_subtitle">DLNA 投屏 · AirPlay 镜像 · 电视接收端</string>
 
     <!-- 状态 -->
     <string name="service_running">投屏服务运行中</string>

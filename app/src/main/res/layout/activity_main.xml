@@ -74,58 +74,66 @@
 
     </LinearLayout>
 
-    <!-- 待机界面 UI (电视形状，极简设计) -->
+    <!-- 待机界面 -->
     <LinearLayout
         android:id="@+id/standbyUi"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:gravity="center"
-        android:background="#FF1A1A1A"
+        android:background="@drawable/standby_background"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <!-- 电视外形 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
+        <!-- 投屏图标 -->
+        <ImageView
+            android:layout_width="96dp"
+            android:layout_height="96dp"
+            android:src="@drawable/ic_cast_glyph"
+            android:contentDescription="@string/app_name" />
+
+        <!-- 主标题 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/tv_standby_title"
+            android:textSize="52sp"
+            android:textColor="#FFF4F4F6"
+            android:letterSpacing="0.08"
+            android:shadowColor="#80000000"
+            android:shadowRadius="12"
+            android:shadowDx="0"
+            android:shadowDy="4" />
+
+        <!-- 副标题：能力一览 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/tv_standby_subtitle"
+            android:textSize="22sp"
+            android:textColor="#FF9A9AA2"
+            android:letterSpacing="0.04" />
+
+        <!-- 服务状态 -->
+        <TextView
+            android:id="@+id/standbyStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:layout_marginTop="48dp"
-            android:layout_marginBottom="48dp"
-            android:layout_marginStart="32dp"
-            android:layout_marginEnd="32dp"
-            android:orientation="vertical"
-            android:background="@drawable/tv_frame_background"
-            android:padding="16dp"
-            android:gravity="center">
-
-            <!-- 电视屏幕区域 -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:orientation="vertical"
-                android:background="#FF2D2D2D"
-                android:gravity="center">
-
-                <!-- 标题文字 - 大字体 -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/tv_standby_title"
-                    android:textSize="56sp"
-                    android:textColor="#FFFFFF"
-                    android:textStyle="bold"
-                    android:gravity="center"
-                    android:shadowColor="#80000000"
-                    android:shadowRadius="8"
-                    android:shadowDx="2"
-                    android:shadowDy="2" />
-
-            </LinearLayout>
-
-        </LinearLayout>
+            android:background="@drawable/status_pill_background"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:text="@string/starting_service"
+            android:textSize="18sp"
+            android:textColor="#FF7BD88F"
+            android:drawableLeft="@drawable/status_dot"
+            android:drawablePadding="10dp" />
 
     </LinearLayout>
 
