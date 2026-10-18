@@ -13,7 +13,7 @@
 - `MirrorVideoRenderer`：逐 NAL 喂入 MediaCodec 硬解渲染（模拟器自动回退软解），模拟器端到端 900 帧零丢帧、帧延迟 p95 ≈ 148ms
 - 音频引擎：AAC-ELD/LC（NdkMediaCodec）+ ALAC（最小 FFmpeg 子集预编译）+ oboe 低延迟输出
 - 修复：`/play` 文本请求处理（vendored llhttp 路径）、镜像会话自动把播放界面带到前台
-- 默认不注册，需 `-Pkbtv.flags.airplay=true` 构建开启（Releases 附 `app-debug-airplay.apk`）
+- 默认不注册，需 `-Pkbtv.flags.airplay=true` 构建开启（Releases 附 `app-release-airplay.apk`）
 
 ### 稳定性 / 工程
 

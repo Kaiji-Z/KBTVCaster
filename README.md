@@ -36,7 +36,7 @@
 | AirPlay 镜像音频 | 🧪 解码链已接通（AAC-ELD/LC + ALAC），真机联调中 |
 
 > [!IMPORTANT]
-> **AirPlay 镜像是实验性功能**，协议默认不注册，需要用 `-Pkbtv.flags.airplay=true` 构建（Releases 里的 `app-debug-airplay.apk` 已开启）。验证状态：模拟器端到端全通过（900 帧零丢帧，帧延迟 p95 ≈ 148ms）；真机（Android 6 电视）设备列表与连接已确认，画面/音频联调收尾中。镜像基于 UxPlay，仅支持**非 DRM** 内容。
+> **AirPlay 镜像是实验性功能**，协议默认不注册，需要用 `-Pkbtv.flags.airplay=true` 构建（Releases 里的 `app-release-airplay.apk` 已开启）。验证状态：模拟器端到端全通过（900 帧零丢帧，帧延迟 p95 ≈ 148ms）；真机（Android 6 电视）设备列表与连接已确认，画面/音频联调收尾中。镜像基于 UxPlay，仅支持**非 DRM** 内容。
 
 ## 📥 下载安装
 
@@ -46,17 +46,18 @@
 
 | APK | 内容 |
 |---|---|
-| `app-debug.apk` | DLNA 稳定版（镜像协议未注册） |
-| `app-debug-airplay.apk` | 含实验性 AirPlay 镜像 |
+| `app-release.apk` | DLNA 稳定版（镜像协议未注册），正式签名 |
+| `app-release-airplay.apk` | 含实验性 AirPlay 镜像，正式签名 |
 
 ### 方式 2：从源码构建
 
 ```bash
 git clone https://github.com/Kaiji-Z/KBTVCaster.git
 cd KBTVCaster
-./gradlew assembleDebug                              # DLNA 版
-./gradlew assembleDebug -Pkbtv.flags.airplay=true    # 含 AirPlay 镜像
-# 产物：app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleDebug                              # Debug 包（日常开发）
+./gradlew assembleRelease -Pkbtv.signing.keystore=<路径>     -Pkbtv.signing.storePassword=<密码> -Pkbtv.signing.keyAlias=kbtv     -Pkbtv.signing.keyPassword=<密码>                   # 签名 Release 包
+# Release 产物：app/build/outputs/apk/release/app-release.apk
+# 镜像版加 -Pkbtv.flags.airplay=true；本地无签名密钥时 Release 为未签名包
 ```
 
 ### 安装到电视
@@ -64,7 +65,7 @@ cd KBTVCaster
 ```bash
 # 网络 adb（电视需开启网络调试）
 adb connect <电视IP>:5555
-adb install -r app-debug-airplay.apk
+adb install -r app-release-airplay.apk
 
 # 或拷进 U 盘，用电视文件管理器侧载
 ```

@@ -8,8 +8,8 @@ Releases are **built by CI, not on the laptop**. The pipeline:
 scripts/release.sh X.Y.Z
   └─ git push origin master vX.Y.Z
        └─ .github/workflows/release.yml (on: push tags v*)
-            ├─ assembleDebug                              → app-debug.apk
-            ├─ assembleDebug -Pkbtv.flags.airplay=true    → app-debug-airplay.apk
+            ├─ assembleRelease (KBTV_KEYSTORE_* env)      → app-release.apk
+            ├─ assembleRelease -Pkbtv.flags.airplay=true  → app-release-airplay.apk
             └─ softprops/action-gh-release@v2
                  ├─ body: releases/vX.Y.Z/VERSION_vX.Y.Z.md (project changelog)
                  ├─ generate_release_notes: true (GitHub commit notes appended)
@@ -49,8 +49,8 @@ gh release view vX.Y.Z
 If Actions is unavailable, the old local path still works:
 
 ```bash
-./gradlew assembleDebug
-gh release create vX.Y.Z app/build/outputs/apk/debug/app-debug.apk \
+./gradlew assembleRelease -Pkbtv.signing.keystore=... -Pkbtv.signing.storePassword=...     -Pkbtv.signing.keyAlias=kbtv -Pkbtv.signing.keyPassword=...
+gh release create vX.Y.Z app/build/outputs/apk/release/app-release.apk \
   --title "Release vX.Y.Z" --notes "$(cat releases/vX.Y.Z/VERSION_vX.Y.Z.md)"
 ```
 

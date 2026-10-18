@@ -42,6 +42,31 @@ android {
         }
     }
 
+    // Release signing: CI exports KBTV_KEYSTORE_* env vars decoded from
+    // GitHub secrets; locally use -Pkbtv.signing.* properties. When the
+    // credentials are incomplete we leave the APK unsigned (status quo).
+    val ksPath = (project.findProperty("kbtv.signing.keystore") as? String)
+        ?: System.getenv("KBTV_KEYSTORE_PATH")
+    val ksStorePassword = (project.findProperty("kbtv.signing.storePassword") as? String)
+        ?: System.getenv("KBTV_KEYSTORE_PASSWORD")
+    val ksKeyAlias = (project.findProperty("kbtv.signing.keyAlias") as? String)
+        ?: System.getenv("KBTV_KEY_ALIAS")
+    val ksKeyPassword = (project.findProperty("kbtv.signing.keyPassword") as? String)
+        ?: System.getenv("KBTV_KEY_PASSWORD")
+    val ksAvailable = ksPath != null && ksStorePassword != null && ksKeyAlias != null &&
+        ksKeyPassword != null && file(ksPath!!).exists()
+
+    signingConfigs {
+        if (ksAvailable) {
+            create("release") {
+                storeFile = file(ksPath)
+                storePassword = ksStorePassword
+                keyAlias = ksKeyAlias
+                keyPassword = ksKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -49,6 +74,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (ksAvailable) signingConfig = signingConfigs.getByName("release")
         }
     }
 

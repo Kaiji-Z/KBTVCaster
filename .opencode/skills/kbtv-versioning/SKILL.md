@@ -42,9 +42,10 @@ I manage KBTVCaster versions throughout the development lifecycle:
      ├─ commit "Release X.Y.Z", annotated tag vX.Y.Z
      └─ push origin master vX.Y.Z   ← tag push triggers CI
 5. GitHub Actions (.github/workflows/release.yml):
-     ├─ assembleDebug            → app-debug.apk        (DLNA 稳定版)
-     ├─ assembleDebug -Pkbtv.flags.airplay=true
-                                 → app-debug-airplay.apk (实验性镜像)
+     ├─ assembleRelease          → app-release.apk        (DLNA 稳定版)
+     ├─ assembleRelease -Pkbtv.flags.airplay=true
+                                 → app-release-airplay.apk (实验性镜像)
+     └─ 两个 APK 均以 GitHub Secrets 中的密钥正式签名并过 apksigner 校验
      └─ GitHub Release: changelog as body + auto notes + both APKs
 6. Verify: gh run watch --workflow=release.yml, then gh release view vX.Y.Z
 ```
@@ -109,7 +110,7 @@ System:
   $ scripts/release.sh 0.3.0
   ... (commits, tags v0.3.0, pushes; CI builds APKs)
   $ gh run watch --workflow=release.yml
-  ✅ Release v0.3.0 live with app-debug.apk + app-debug-airplay.apk
+  ✅ Release v0.3.0 live with app-release.apk + app-release-airplay.apk
 ```
 
 ## Output Format
@@ -123,7 +124,7 @@ Git:
 
 CI:
 - Workflow run: {run_url}
-- Artifacts: app-debug.apk, app-debug-airplay.apk on the GitHub Release
+- Artifacts: app-release.apk, app-release-airplay.apk on the GitHub Release
 
 Rollback:
 git checkout v{x.x.x}

@@ -1,7 +1,9 @@
 name: release
 
 # Tag-driven release: push a v* tag (scripts/release.sh does this) and CI
-# builds both APK variants and attaches them to a GitHub Release.
+# builds both signed release APK variants and attaches them to a GitHub
+# Release. Signing key is delivered via secrets (KBTV_KEYSTORE_BASE64,
+# KBTV_KEYSTORE_PASSWORD, KBTV_KEY_ALIAS, KBTV_KEY_PASSWORD).
 on:
   push:
     tags: ['v*']
@@ -11,7 +13,7 @@ permissions:
 
 jobs:
   apk:
-    name: Build APKs and publish GitHub Release
+    name: Build signed APKs and publish GitHub Release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,18 +25,37 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      - name: Decode signing key
+        run: echo "${{ secrets.KBTV_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/kbtv.keystore"
+
       # Both variants land at the same output path, so each is copied aside
       # right after its build.
-      - name: Build DLNA APK (default flags)
+      - name: Build release APK (default flags)
+        env:
+          KBTV_KEYSTORE_PATH: ${{ runner.temp }}/kbtv.keystore
+          KBTV_KEYSTORE_PASSWORD: ${{ secrets.KBTV_KEYSTORE_PASSWORD }}
+          KBTV_KEY_ALIAS: ${{ secrets.KBTV_KEY_ALIAS }}
+          KBTV_KEY_PASSWORD: ${{ secrets.KBTV_KEY_PASSWORD }}
         run: |
-          ./gradlew assembleDebug --console=plain
+          ./gradlew assembleRelease --console=plain
           mkdir -p out
-          cp app/build/outputs/apk/debug/app-debug.apk out/app-debug.apk
+          cp app/build/outputs/apk/release/app-release.apk out/app-release.apk
 
-      - name: Build AirPlay APK (experimental mirror)
+      - name: Build release APK (experimental mirror)
+        env:
+          KBTV_KEYSTORE_PATH: ${{ runner.temp }}/kbtv.keystore
+          KBTV_KEYSTORE_PASSWORD: ${{ secrets.KBTV_KEYSTORE_PASSWORD }}
+          KBTV_KEY_ALIAS: ${{ secrets.KBTV_KEY_ALIAS }}
+          KBTV_KEY_PASSWORD: ${{ secrets.KBTV_KEY_PASSWORD }}
         run: |
-          ./gradlew assembleDebug -Pkbtv.flags.airplay=true --console=plain
-          cp app/build/outputs/apk/debug/app-debug.apk out/app-debug-airplay.apk
+          ./gradlew assembleRelease -Pkbtv.flags.airplay=true --console=plain
+          cp app/build/outputs/apk/release/app-release.apk out/app-release-airplay.apk
+
+      - name: Verify APK signatures
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME/build-tools/"*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify out/app-release.apk
+          "$APKSIGNER" verify out/app-release-airplay.apk
 
       # releases/<tag>/VERSION_<tag>.md is the project changelog; GitHub's
       # auto-generated notes get appended after it.
