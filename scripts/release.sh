@@ -22,7 +22,10 @@ GRADLE=app/build.gradle.kts
 
 # ---------- preflight ----------
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "not a git repo"
-[ -z "$(git status --porcelain)" ] || die "working tree not clean — commit or stash first"
+# The target changelog may carry uncommitted edits (the scaffold flow expects
+# a human edit between runs); everything else must be clean.
+DIRTY=$(git status --porcelain | grep -v " $CHANGELOG\$" || true)
+[ -z "$DIRTY" ] || die "working tree not clean — commit or stash first"
 [ "$(git branch --show-current)" = "master" ] || die "not on master branch"
 ! git rev-parse -q --verify "$TAG" >/dev/null || die "tag $TAG already exists locally"
 if git ls-remote --exit-code --tags origin "$TAG" >/dev/null 2>&1; then
