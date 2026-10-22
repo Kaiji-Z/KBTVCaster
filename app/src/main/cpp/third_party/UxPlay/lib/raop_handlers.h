@@ -560,6 +560,18 @@ raop_handler_fpsetup(raop_conn_t *conn,
             }
         }
     } else if (datalen == 164) {
+        /* Upstream UxPlay guard (2024): only type 0x03 FairPlay challenges
+         * can be handled with publicly-available information. Types 4/5
+         * (chosen by modern iOS when the receiver advertises AirPlay video
+         * feature bits) decrypt to garbage keys instead of failing, so
+         * reject them loudly. */
+        logger_log(raop->logger, LOGGER_DEBUG, "FairPlay challenge type 0x%02x", data[4]);
+        if (data[4] != 0x03) {
+            logger_log(raop->logger, LOGGER_ERR, " Client sent an unsupported type 0x%02x FairPlay challenge:\n"
+                        "Only type 0x03 can be handled using publically-available information", data[4]);
+            http_response_init(response, "RTSP/1.0", 501, "Not Implemented");
+            return;
+        }
         *response_data = calloc(32, sizeof(char));
         if (*response_data) {
             http_response_add_header(response, "Content-Type", "application/octet-stream");
