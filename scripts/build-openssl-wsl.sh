@@ -31,7 +31,7 @@ curl -sL --retry 3 -o o.tar.gz "https://mirror.viaduck.org/openssl/openssl-$VER.
 tar xzf o.tar.gz
 cd openssl-$VER
 
-MODULES="no-cast no-md2 no-md4 no-mdc2 no-rc4 no-rc5 no-engine no-idea no-camellia no-ssl3 no-heartbeats no-gost no-deprecated no-capieng no-comp no-dtls no-psk no-srp no-dso no-dsa no-rc2 no-des no-tests no-hw"
+MODULES="no-asm no-cast no-md2 no-md4 no-mdc2 no-rc4 no-rc5 no-engine no-idea no-camellia no-ssl3 no-heartbeats no-gost no-deprecated no-capieng no-comp no-dtls no-psk no-srp no-dso no-dsa no-rc2 no-des no-tests no-hw"
 
 build() { # $1=openssl-target $2=abi-dir
     local target=$1 abi=$2
