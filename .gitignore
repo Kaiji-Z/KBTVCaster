@@ -56,3 +56,4 @@ app/src/main/cpp/third_party/UxPlay/lib/*.rej
 
 # local tool caches
 .video_agent/
+.v2c/
