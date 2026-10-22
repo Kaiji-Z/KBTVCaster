@@ -4,7 +4,10 @@
  */
 
 #include <jni.h>
+#include <unistd.h>
+#include <vector>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -28,6 +31,7 @@ struct __attribute__((packed)) AudioDebugData {
     LatencyReporter::Debug decode;
     AudioOutput::Debug output;
     int32_t decodeErrors;  // cumulative packets Decoder::decode() reported as failed
+    int64_t audioPackets;  // cumulative packets delivered into decode(); 0 = nothing arrives
 };
 
 struct AudioConfig {
@@ -111,6 +115,7 @@ struct AudioEngine {
                 mDebug.decode = mDecLatency.debugInfo();
                 mDebug.output = mOutput->debugInfo();
                 mDebug.decodeErrors = mDecodeErrors.load(std::memory_order_relaxed);
+                mDebug.audioPackets = mAudioPackets.load(std::memory_order_relaxed);
             }
         }
         memcpy(dst, &mDebug, sizeof(mDebug));
@@ -146,8 +151,14 @@ struct AudioEngine {
             // codec switch is definitely a discontinuity
             mTimeline->reanchorTracker();
         }
+        mAudioPackets.fetch_add(1, std::memory_order_relaxed);
         if (mDecoder.decoder && !mDecoder.decoder->decode(data, len, ptsNs))
             mDecodeErrors.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    // field-probe only: inject PCM past the decoder (see audio_engine_test_run)
+    void testPush(const int16_t *pcm, size_t samples, int64_t ptsNs) {
+        if (mTimeline) mTimeline->write(pcm, samples, ptsNs);
     }
 
 private:
@@ -205,6 +216,7 @@ private:
 
     AudioDebugData mDebug{};
     std::atomic<int32_t> mDecodeErrors{0};
+    std::atomic<int64_t> mAudioPackets{0};
 };
 
 AudioEngine *audio_engine_create(std::shared_ptr<LogSink> log, int sampleRate, int channels) {
@@ -258,6 +270,116 @@ void audio_engine_decode(AudioEngine *engine, const uint8_t *data, int len, int 
     if (engine && data && len > 0) {
         engine->decode(data, (size_t)len, ct, pts_ns);
     }
+}
+
+// Headless AAC probe: decode a raw-ADTS test file through the full engine
+// (software-first decoder policy) by splitting ADTS frames and feeding the
+// payload as raw AirPlay-shaped packets. Proves the ffmpeg AAC path consumes
+// cleanly (decodeErr==0, packets>0) without a live mirror session.
+extern "C" int audio_engine_test_aac_file(const char *path, int ct, int spf,
+                                          int sample_rate, int channels,
+                                          char *report, int cap) {
+    FILE *f = fopen(path, "rb");
+    if (!f) { snprintf(report, cap, "open_failed"); return -1; }
+    std::vector<uint8_t> buf;
+    uint8_t tmp[65536];
+    size_t n;
+    while ((n = fread(tmp, 1, sizeof(tmp), f)) > 0) buf.insert(buf.end(), tmp, tmp + n);
+    fclose(f);
+
+    auto log = std::make_shared<LogSink>();
+    AudioEngine *engine = audio_engine_create(log, sample_rate, channels);
+    if (!engine) { snprintf(report, cap, "create_failed"); return -1; }
+    engine->configure(AudioConfig{0, 90, 0, false, false, true, false});
+    engine->start();
+    engine->onFormat(ct, spf);
+
+    int fed = 0;
+    int64_t ptsNs = 0;
+    size_t i = 0;
+    while (i + 7 <= buf.size()) {
+        const uint8_t *p = buf.data() + i;
+        if (p[0] == 0xFF && (p[1] & 0xF6) == 0xF0) {
+            const int hdr = (p[1] & 0x01) ? 7 : 9;
+            const int framelen = ((p[3] & 0x03) << 11) | (p[4] << 3) | (p[5] >> 5);
+            if (framelen <= hdr || i + framelen > buf.size()) break;
+            engine->decode(p + hdr, (size_t)(framelen - hdr), ct, ptsNs);
+            ptsNs += (int64_t)spf * 1000000000LL / sample_rate;
+            fed++;
+            i += framelen;
+        } else {
+            i++;
+        }
+    }
+    usleep(500000);
+    AudioDebugData dbg{};
+    engine->copyDebug(&dbg, sizeof(dbg));
+    snprintf(report, cap,
+             "fed=%d pkts=%lld backlogMs=%u trims=%u drops=%u underruns=%u decodeErr=%d",
+             fed, (long long)dbg.audioPackets, dbg.timeline.backlogMs,
+             dbg.timeline.metrics.trims, dbg.timeline.metrics.drops,
+             dbg.timeline.metrics.underruns, dbg.decodeErrors);
+    engine->stop();
+    delete engine;
+    return 0;
+}
+
+// Live-session audio counters as a key=val string; discriminates "no packets
+// arrive" (audioPackets=0) from "decoder fails" (decodeErr climbs) from
+// "output paces" (backlog/underruns move) without any packed-struct parsing.
+extern "C" int audio_engine_debug_string(AudioEngine *engine, char *report, int cap) {
+    if (!engine) { snprintf(report, cap, "engine=null"); return -1; }
+    AudioDebugData dbg{};
+    engine->copyDebug(&dbg, sizeof(dbg));
+    snprintf(report, cap,
+             "pkts=%lld backlogMs=%u cushionMs=%u trims=%u drops=%u silences=%u underruns=%u xrun=%d decodeErr=%d",
+             (long long)dbg.audioPackets, dbg.timeline.backlogMs, dbg.timeline.tunedCushionMs,
+             dbg.timeline.metrics.trims, dbg.timeline.metrics.drops,
+             dbg.timeline.metrics.silences, dbg.timeline.metrics.underruns,
+             dbg.output.xrun, dbg.decodeErrors);
+    return 0;
+}
+
+// Headless field probe: standalone engine, 440Hz sine PCM pushed through the
+// timeline into oboe. Isolates the silent-output layer without a live mirror
+// session: started=0 pins the output (oboe/OpenSL) layer; started=1 with
+// underruns/silences climbing pins timeline pacing; clean counters mean the
+// output layer is healthy and silence lives upstream (decoder / callbacks).
+extern "C" int audio_engine_test_run(int sample_rate, int channels, int seconds,
+                                     char *report, int cap) {
+    auto log = std::make_shared<LogSink>();
+    AudioEngine *engine = audio_engine_create(log, sample_rate, channels);
+    if (!engine) { snprintf(report, cap, "started=0 reason=create_failed"); return -1; }
+    engine->configure(AudioConfig{0, 90, 0, false, false, true, false});
+    const bool started = engine->start();
+    if (started) {
+        const int chunkFrames = sample_rate / 100;
+        std::vector<int16_t> pcm(chunkFrames * channels);
+        int64_t ptsNs = 0;
+        const double twoPi = 6.28318530717958647692;
+        for (int c = 0; c < seconds * 100; c++) {
+            for (int f = 0; f < chunkFrames; f++) {
+                const double t = static_cast<double>(c * chunkFrames + f) / sample_rate;
+                const int16_t v = static_cast<int16_t>(12000.0 * sin(twoPi * 440.0 * t));
+                for (int ch = 0; ch < channels; ch++) pcm[f * channels + ch] = v;
+            }
+            engine->testPush(pcm.data(), pcm.size(), ptsNs);
+            ptsNs += chunkFrames * 1000000000LL / sample_rate;
+            usleep(2500);
+        }
+        usleep(seconds * 500000);
+    }
+    AudioDebugData dbg{};
+    engine->copyDebug(&dbg, sizeof(dbg));
+    snprintf(report, cap,
+             "started=%d backlogMs=%u cushionMs=%u trims=%u drops=%u silences=%u underruns=%u xrun=%d decodeErr=%d",
+             started ? 1 : 0, dbg.timeline.backlogMs, dbg.timeline.tunedCushionMs,
+             dbg.timeline.metrics.trims, dbg.timeline.metrics.drops,
+             dbg.timeline.metrics.silences, dbg.timeline.metrics.underruns,
+             dbg.output.xrun, dbg.decodeErrors);
+    engine->stop();
+    delete engine;
+    return started ? 0 : -2;
 }
 
 }

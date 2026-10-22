@@ -6,13 +6,16 @@
 # the Linux NDK and install static libs into
 # app/src/main/cpp/prebuilt/ffmpeg/<abi>/ consumed via CMake IMPORTED targets.
 #
-# Configuration replicated from upstream BuildFFmpeg.cmake:
-#   --disable-all --enable-avcodec --enable-decoder=alac --enable-static
-#   --enable-pic --disable-asm --disable-x86asm --disable-network
+# Configuration replicated from upstream BuildFFmpeg.cmake, plus the AAC
+# decoder (2026-10-22: the field firmware's platform AAC path is the prime
+# silent-audio suspect; commercial receivers decode AAC-ELD in software on
+# this chipset class, so we mirror that choice with ffmpeg's LGPL decoder):
+#   --disable-all --enable-avcodec --enable-decoder=alac --enable-decoder=aac
+#   --enable-static --enable-pic --disable-asm --disable-x86asm --disable-network
 #   --disable-autodetect
 # ffmpeg source pinned to the upstream submodule commit
-#   38b88335f99e76ed89ff3c93f877fdefce736c13 (LGPL subset: only the ALAC
-#   decoder is enabled; no GPL components).
+#   38b88335f99e76ed89ff3c93f877fdefce736c13 (LGPL subset: ALAC + AAC
+#   decoders only; no GPL components).
 #
 # Usage (from WSL):  bash scripts/build-ffmpeg-wsl.sh <ndk-root> <repo-root-on-/mnt/c>
 set -euo pipefail
@@ -46,7 +49,7 @@ build() { # $1=configure-arch $2=triple $3=abi-dir [$4=extra-flags]
         --sysroot="$SYSROOT" \
         --enable-pic --disable-asm --disable-x86asm \
         --disable-all --disable-debug --disable-network --disable-autodetect \
-        --enable-avcodec --enable-decoder=alac --enable-static --disable-shared
+        --enable-avcodec --enable-decoder=alac --enable-decoder=aac --enable-static --disable-shared
     make -j"$(nproc)"
     make install
     mkdir -p "$REPO/app/src/main/cpp/prebuilt/ffmpeg/$abi"

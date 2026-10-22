@@ -343,6 +343,130 @@ private:
     int mChannels;
 };
 
+// software AAC (LC/ELD) via ffmpeg libavcodec. Mirrors FfmpegAlacDecoder;
+// preferred over AMediaCodec since 2026-10-22: the field firmware's platform
+// AAC path is the prime silent-audio suspect, and software decoding is the
+// approach commercial receivers verified on this same silicon use.
+// AirPlay delivers raw (non-ADTS) frames configured by the ASC in extradata.
+class FfmpegAacDecoder : public Decoder {
+public:
+    static std::unique_ptr<FfmpegAacDecoder> make(int ct, int spf, int sampleRate, int channels,
+                                                  TimelineBuffer &timeline, LatencyReporter &lat,
+                                                  LogSink &log) {
+        installFfmpegLogcat();
+        auto dec = std::unique_ptr<FfmpegAacDecoder>(new FfmpegAacDecoder(timeline, lat, log));
+        if (!dec->init(ct, spf, sampleRate, channels)) return nullptr;
+        return dec;
+    }
+
+    ~FfmpegAacDecoder() override {
+        if (mFrame) av_frame_free(&mFrame);
+        if (mPkt) av_packet_free(&mPkt);
+        if (mCtx) avcodec_free_context(&mCtx);
+    }
+
+    bool decode(const uint8_t *data, size_t len, int64_t ptsNs) override {
+        if (len == 0 || len > INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE) return false;
+        const int64_t t0 = monoNs();
+
+        if (mPkt->size < (int)len) {
+            if (av_grow_packet(mPkt, (int)len - mPkt->size) < 0) return false;
+        } else {
+            av_shrink_packet(mPkt, (int)len);
+        }
+        memcpy(mPkt->data, data, len);
+        // raw frames carry no timestamps: let the decoder order them, we stamp
+        // the first produced frame with the packet's arrival pts and advance
+        // by nb_samples from there
+        mPkt->pts = AV_NOPTS_VALUE;
+
+        if (avcodec_send_packet(mCtx, mPkt) < 0) return false;
+
+        bool ok = false;
+        int64_t pts = mPendingPtsNs;
+        mPendingPtsNs = 0;
+        while (avcodec_receive_frame(mCtx, mFrame) == 0) {
+            const int n = mFrame->nb_samples;
+            if (n <= 0) continue;
+            if (mFrame->format == AV_SAMPLE_FMT_FLTP) {
+                if (mPcm.size() < (size_t)n * mChannels) mPcm.resize((size_t)n * mChannels);
+                for (int c = 0; c < mChannels; c++) {
+                    const float *p = (const float *)mFrame->data[c];
+                    for (int i = 0; i < n; i++) {
+                        float v = p[i] * 32768.0f;
+                        if (v > 32767.0f) v = 32767.0f;
+                        if (v < -32768.0f) v = -32768.0f;
+                        mPcm[(size_t)i * mChannels + c] = (int16_t)v;
+                    }
+                }
+                mTimeline.write(mPcm.data(), (size_t)n * mChannels, pts);
+                pts += (int64_t)n * NS_PER_SEC / mCtx->sample_rate;
+                ok = true;
+            } else {
+                mLog.error("ffmpeg AAC: unsupported sample format %d", mFrame->format);
+                return false;
+            }
+        }
+        if (pts != 0) mPendingPtsNs = pts;  // carry stamp for the next packet
+        mLat.record(monoNs() - t0);
+        mLat.setHeld(0);
+        return true;
+    }
+
+private:
+    FfmpegAacDecoder(TimelineBuffer &timeline, LatencyReporter &lat, LogSink &log)
+        : mTimeline(timeline), mLat(lat), mLog(log) {}
+
+    bool init(int ct, int spf, int sampleRate, int channels) {
+        const AVCodec *codec = avcodec_find_decoder(AV_CODEC_ID_AAC);
+        if (!codec) { mLog.error("ffmpeg AAC decoder not compiled in"); return false; }
+        mCtx = avcodec_alloc_context3(codec);
+        if (!mCtx) return false;
+
+        // AudioSpecificConfig, same bytes the AMediaCodec path feeds as csd-0
+        uint8_t csd[4]; size_t csdLen;
+        if (ct == CT_AAC_ELD) {
+            csd[0] = 0xF8; csd[1] = 0xE8;
+            csd[2] = (spf == 512) ? 0x40 : 0x50; csd[3] = 0x00; csdLen = 4;
+        } else if (ct == CT_AAC_LC) {
+            csd[0] = 0x12;
+            csd[1] = (spf == 960) ? 0x14 : 0x10; csdLen = 2;
+        } else {
+            mLog.error("ffmpeg AAC: unknown ct=%d", ct); return false;
+        }
+        mCtx->extradata = (uint8_t *)av_mallocz(csdLen + AV_INPUT_BUFFER_PADDING_SIZE);
+        if (!mCtx->extradata) return false;
+        memcpy(mCtx->extradata, csd, csdLen);
+        mCtx->extradata_size = (int)csdLen;
+
+        mCtx->sample_rate = sampleRate;
+        av_channel_layout_default(&mCtx->ch_layout, channels);
+        mCtx->thread_count = 1;
+
+        if (avcodec_open2(mCtx, codec, nullptr) < 0) {
+            mLog.error("ffmpeg AAC open failed (ct=%d rate=%d ch=%d)", ct, sampleRate, channels);
+            return false;
+        }
+
+        mPkt = av_packet_alloc();
+        mFrame = av_frame_alloc();
+        if (!mPkt || !mFrame) return false;
+        mChannels = channels;
+        mPcm.resize((size_t)spf * channels);
+        return true;
+    }
+
+    AVCodecContext *mCtx = nullptr;
+    AVPacket *mPkt = nullptr;
+    AVFrame *mFrame = nullptr;
+    std::vector<int16_t> mPcm;  // interleave scratch
+    int64_t mPendingPtsNs = 0;  // pts carried across decoder output delay
+    TimelineBuffer &mTimeline;
+    LatencyReporter &mLat;
+    LogSink &mLog;
+    int mChannels;
+};
+
 // ---- decoder factories ----
 // create + configure + start AMediaCodec for `mime` with `fmt` (consumes fmt); tries
 // `preferName` first if set, falls back to platform default; nullptr if none start
@@ -436,8 +560,14 @@ static inline std::unique_ptr<Decoder> makeDecoder(int ct, int spf, int sampleRa
         log.error("ALAC init failed (hw and sw)");
         return nullptr;
     }
+    // software first (field-verified approach, 2026-10-22); AMediaCodec fallback
+    if (auto sw = FfmpegAacDecoder::make(ct, spf, sampleRate, channels, timeline, lat, log)) {
+        log.info("AAC: software decoder (ffmpeg)%s", "");
+        return sw;
+    }
     if (AMediaCodec *codec = startAacCodec(ct, spf, sampleRate, channels, log,
                                            realtimePriority, lowLatency)) {
+        log.info("AAC: platform decoder (fallback)");
         return std::make_unique<MediaCodecDecoder>(codec, timeline, lat);
     }
     log.error("AAC codec init failed (ct=%d)", ct);

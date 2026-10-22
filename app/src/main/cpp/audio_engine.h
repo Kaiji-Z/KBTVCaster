@@ -45,6 +45,17 @@ void audio_engine_destroy(AudioEngine *engine);
 /* decode + play one encoded airplay packet; not concurrent with audio_engine_destroy */
 void audio_engine_decode(AudioEngine *engine, const uint8_t *data, int len, int ct, int64_t pts_ns);
 
+/* headless field probe: standalone engine, sine PCM through timeline into oboe.
+ * writes a key=val report; returns 0 when the output stream opened. */
+int audio_engine_test_run(int sample_rate, int channels, int seconds, char *report, int cap);
+
+/* live-session counters as key=val string; -1 if engine NULL */
+int audio_engine_debug_string(AudioEngine *engine, char *report, int cap);
+
+/* headless AAC path probe: raw-ADTS test file -> engine -> counters */
+int audio_engine_test_aac_file(const char *path, int ct, int spf, int sample_rate,
+                               int channels, char *report, int cap);
+
 #ifdef __cplusplus
 }
 

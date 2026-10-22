@@ -42,6 +42,12 @@ object NativeBridge {
     external fun nativeServerAudioStart(handle: Long): Boolean
     external fun nativeServerAudioStop(handle: Long)
     external fun nativeServerAudioFormat(handle: Long, ct: Int, spf: Int)
+    // headless field probe: standalone engine, sine PCM -> timeline -> oboe
+    external fun nativeTestAudioPipeline(sampleRate: Int, channels: Int, seconds: Int): String
+    // headless AAC path probe: raw-ADTS test file -> engine -> counters
+    external fun nativeTestAacFile(path: String, ct: Int, spf: Int, sampleRate: Int, channels: Int): String
+    // live-session audio counters as key=val string (see audio_engine_debug_string)
+    external fun nativeServerAudioStats(handle: Long): String
     // fills direct buffer with packed debug snapshot; false if audio isn't running
     external fun nativeServerAudioDebug(handle: Long, buf: java.nio.ByteBuffer): Boolean
 }

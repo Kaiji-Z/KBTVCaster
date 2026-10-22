@@ -1,7 +1,7 @@
-prefix=/tmp/tmp.2u5pWLTG6G/out-x86_64
+prefix=/tmp/tmp.QfDnMzW9zP/out-x86_64
 exec_prefix=${prefix}
-libdir=/tmp/tmp.2u5pWLTG6G/out-x86_64/lib
-includedir=/tmp/tmp.2u5pWLTG6G/out-x86_64/include
+libdir=/tmp/tmp.QfDnMzW9zP/out-x86_64/lib
+includedir=/tmp/tmp.QfDnMzW9zP/out-x86_64/include
 
 Name: libavcodec
 Description: FFmpeg codec library

@@ -63,7 +63,12 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
                 audioManager.getProperty(android.media.AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull() ?: 0,
                 audioManager.getProperty(android.media.AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)?.toIntOrNull() ?: 0,
             )
-            handle = NativeBridge.nativeInit(this, hwAddress(appContext), SERVICE_NAME, keyFile, false, false)
+            // nohold=true: on iPhone disconnect the RTSP connection lingers in
+            // the httpd (TEARDOWN type-110 stops the mirror but never destroys
+            // the connection), so a reconnect used to get 409 Conflict. The
+            // nohold path evicts known connections on the next request —
+            // single-client takeover is the intended TV receiver semantics.
+            handle = NativeBridge.nativeInit(this, hwAddress(appContext), SERVICE_NAME, keyFile, true, false)
             if (handle == 0L) {
                 Timber.e("nativeInit failed")
                 TraceRecorder.log("mirror_start_failed", "stage" to "init")
@@ -71,6 +76,8 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
             }
             val dm = appContext.resources.displayMetrics
             NativeBridge.nativeSetDisplaySize(handle, dm.widthPixels, dm.heightPixels, MAX_FPS)
+            // (alac, aac): audio codec advertisement. Both on — mirrors the
+            // emulator-verified configuration.
             NativeBridge.nativeSetCodecs(handle, true, true)
             NativeBridge.nativeSetLang(handle, "", "", java.util.Locale.getDefault().toLanguageTag())
             NativeBridge.nativeSetAudioEnabled(handle, true)
@@ -80,6 +87,7 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
             // request"). Must run BEFORE nativeStart: the shim snapshots the
             // TXT records (incl. features bits 0/4) when registering inside
             // start, and later feature updates never reach the cached TXT.
+            val traceDir = java.io.File(appContext.filesDir, "trace").apply { mkdirs() }
             NativeBridge.nativeSetHlsEnabled(handle, true)
             val port = NativeBridge.nativeStart(handle, PORT)
             if (port < 0) {
@@ -209,8 +217,35 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
             NativeBridge.nativeServerAudioStart(handle)
             NativeBridge.nativeServerAudioFormat(handle, ct, spf)
             TraceRecorder.log("mirror_audio_format", "ct" to ct, "spf" to spf, "screen" to usingScreen)
+            startAudioStatsTimer()
         } catch (e: Exception) {
             Timber.e(e, "audio start failed")
+        }
+    }
+
+    // Periodic engine counters into the trace: discriminates "no packets
+    // arrive" (pkts=0 — delivery gate / NTP sync) from "decoder fails"
+    // (decodeErr climbs) from "output paces" (backlog/underruns move).
+    private var audioStatsTimer: java.util.Timer? = null
+
+    private fun startAudioStatsTimer() {
+        audioStatsTimer?.cancel()
+        audioStatsTimer = java.util.Timer("audio-stats", true).apply {
+            scheduleAtFixedRate(object : java.util.TimerTask() {
+                override fun run() {
+                    try {
+                        val stats = NativeBridge.nativeServerAudioStats(handle)
+                        TraceRecorder.log("mirror_audio_stats", "raw" to stats)
+                        Timber.d("audio stats: %s", stats)
+                    } catch (t: Throwable) {
+                        // Throwable: an UnsatisfiedLinkError here previously
+                        // killed the timer silently (stats showed 0 entries
+                        // in the 2026-10-22 field session).
+                        Timber.w(t, "audio stats failed")
+                        cancel()
+                    }
+                }
+            }, 5000, 5000)
         }
     }
 
@@ -226,6 +261,8 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
     override fun onClientVolume(): Float = 0f
 
     override fun onAudioTeardown() {
+        audioStatsTimer?.cancel()
+        audioStatsTimer = null
         try {
             NativeBridge.nativeServerAudioStop(handle)
         } catch (e: Exception) {

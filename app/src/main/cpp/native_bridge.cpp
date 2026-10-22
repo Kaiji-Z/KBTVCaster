@@ -16,6 +16,9 @@ extern "C" {
 #include "pairing.h"
 #include "android_raop_callbacks.h"
 #include "android_dnssd_shim.h"
+#ifdef __ANDROID__
+/* defined in vendored raop_rtp_mirror.c (field probe) */
+#endif
 }
 
 #include "audio_engine.h"
@@ -71,7 +74,7 @@ Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeInit(
     }
     ctx->cb_ctx.raop = ctx->raop;
 
-    raop_set_log_level(ctx->raop, LOGGER_ERR);
+    raop_set_log_level(ctx->raop, LOGGER_INFO);
     raop_set_log_callback(ctx->raop, _log_callback, NULL);
 
     const char *keyfile_c = env->GetStringUTFChars(keyFile, NULL);
@@ -299,7 +302,12 @@ Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeSetH265Enabled(
     }
 }
 
-/* hls plist gates raop.c's hls support; feature bits 0/4 advertise it over dns-sd */
+/* hls plist gates raop.c's hls support (CSeq-less /play acceptance).
+ * Deliberately NOT advertised as dns-sd feature bits 0/4: those bits make
+ * modern iOS negotiate a newer FairPlay handshake (challenge type != 0x03)
+ * that playfair cannot decrypt — the mirror stream then decodes to noise
+ * even though every key-derivation step reports success. Upstream UxPlay
+ * advertises 0x5A7FFEE6 (bits 0/4 off) for exactly this reason. */
 extern "C"
 JNIEXPORT void JNICALL
 Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeSetHlsEnabled(
@@ -308,10 +316,6 @@ Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeSetHlsEnabled(
     server_ctx_t *ctx = (server_ctx_t *)(intptr_t)handle;
     if (!ctx || !ctx->raop) return;
     raop_set_plist(ctx->raop, "hls", enabled ? 1 : 0);
-    if (ctx->dnssd) {
-        dnssd_set_airplay_features(ctx->dnssd, 0, enabled ? 1 : 0);
-        dnssd_set_airplay_features(ctx->dnssd, 4, enabled ? 1 : 0);
-    }
 }
 
 extern "C"
@@ -407,6 +411,37 @@ Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeServerAudioFormat(
         JNIEnv *env, jobject thiz, jlong handle, jint ct, jint spf) {
     server_ctx_t *ctx = (server_ctx_t *)(intptr_t)handle;
     if (ctx && ctx->cb_ctx.audio_engine) audio_engine_on_format(ctx->cb_ctx.audio_engine, ct, spf);
+}
+
+extern "C"
+JNIEXPORT jstring JNICALL
+Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeTestAudioPipeline(
+        JNIEnv *env, jclass, jint sample_rate, jint channels, jint seconds) {
+    char report[256] = {0};
+    audio_engine_test_run(sample_rate, channels, seconds, report, sizeof(report));
+    return env->NewStringUTF(report);
+}
+
+extern "C"
+JNIEXPORT jstring JNICALL
+Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeTestAacFile(
+        JNIEnv *env, jclass, jstring path, jint ct, jint spf, jint sample_rate, jint channels) {
+    const char *cpath = env->GetStringUTFChars(path, nullptr);
+    char report[256] = {0};
+    audio_engine_test_aac_file(cpath, ct, spf, sample_rate, channels, report, sizeof(report));
+    env->ReleaseStringUTFChars(path, cpath);
+    return env->NewStringUTF(report);
+}
+
+extern "C"
+JNIEXPORT jstring JNICALL
+Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeServerAudioStats(
+        JNIEnv *env, jclass, jlong handle) {
+    server_ctx_t *ctx = (server_ctx_t *)(intptr_t)handle;
+    char report[256] = {0};
+    if (!ctx || !ctx->cb_ctx.audio_engine) return env->NewStringUTF("engine=null");
+    audio_engine_debug_string(ctx->cb_ctx.audio_engine, report, sizeof(report));
+    return env->NewStringUTF(report);
 }
 
 extern "C"
