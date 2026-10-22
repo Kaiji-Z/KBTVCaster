@@ -128,6 +128,10 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
                 try {
                     if (protocol is com.kbtv.caster.airplay.AirPlayMirrorProtocol) {
                         protocol.videoOut = mirrorRenderer
+                        mirrorRenderer.attachContext(applicationContext)
+                        if (BuildConfig.DEBUG) {
+                            mirrorRenderer.debugDumpDir = java.io.File(filesDir, "trace")
+                        }
                         // The mirror renders into MainActivity's SurfaceView; the
                         // session is useless on screen while the UI is backgrounded,
                         // so pull it forward exactly like DLNA playback does.

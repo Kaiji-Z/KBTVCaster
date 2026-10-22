@@ -200,7 +200,10 @@ class MainActivity : AppCompatActivity() {
 
     /** 镜像会话状态驱动界面切换：镜像时全屏镜像面，结束后回到播放/待机状态 */
     private fun observeMirrorState() {
-        coordinatorService?.mirrorRenderer?.rendering?.observe(this) { active ->
+        // sessionActive, not rendering: the surface must exist before the
+        // first frame can render — gating visibility on the first frame
+        // deadlocks the pipeline with a black screen.
+        coordinatorService?.mirrorRenderer?.sessionActive?.observe(this) { active ->
             if (active) {
                 Timber.d("Mirror session active, showing mirror surface")
                 playerView.visibility = View.GONE
