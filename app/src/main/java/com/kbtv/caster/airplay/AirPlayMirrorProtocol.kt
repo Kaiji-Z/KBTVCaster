@@ -226,9 +226,16 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
         // Open playout first, then declare the codec (upstream order; the
         // native start is idempotent, teardown closes the stream).
         try {
-            NativeBridge.nativeServerAudioStart(handle)
+            // configure MUST precede start: without it the engine never
+            // builds its internals and decode() silently drops everything
+            // (pkts stayed 0 through the whole 2026-10-25 field session
+            // while 1793 packets were dequeued and handed over).
+            NativeBridge.nativeServerAudioConfigure(handle, 0, 90, 0, false, false, true, false)
+            val started = NativeBridge.nativeServerAudioStart(handle)
             NativeBridge.nativeServerAudioFormat(handle, ct, spf)
-            TraceRecorder.log("mirror_audio_format", "ct" to ct, "spf" to spf, "screen" to usingScreen)
+            TraceRecorder.log("mirror_audio_format", "ct" to ct, "spf" to spf,
+                "screen" to usingScreen, "started" to started)
+            if (!started) Timber.w("audio output failed to start")
             startAudioStatsTimer()
         } catch (e: Exception) {
             Timber.e(e, "audio start failed")

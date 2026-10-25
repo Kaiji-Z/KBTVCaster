@@ -242,11 +242,19 @@ raop_buffer_dequeue(raop_buffer_t *raop_buffer, unsigned int *length, uint32_t *
         /* If we do no resends, always return the first entry */
     } else if (!entry->filled) {
         /* Check how much we have space left in the buffer */
-        if (entry_count < RAOP_BUFFER_LENGTH) {
+        if (entry_count < RAOP_BUFFER_LENGTH && entry_count <= 16) {
             /* Return nothing and hope resend gets on time */
             return NULL;
         }
-        /* Risk of buffer overrun, return empty buffer */
+        /* [kbtv] screen-mirroring audio senders never answer resend
+         * requests, so a single lost packet stalled dequeue forever
+         * (field 2026-10-25: dq frozen at 1793 while datapkts kept
+         * climbing). Once 16 newer packets are waiting behind the hole,
+         * drop the hole span and yield the first entry newer than it. */
+        while (!entry->filled && seqnum_cmp(raop_buffer->first_seqnum, raop_buffer->last_seqnum) < 0) {
+            raop_buffer->first_seqnum += 1;
+            entry = &raop_buffer->entries[raop_buffer->first_seqnum % RAOP_BUFFER_LENGTH];
+        }
     }
 
     /* Update buffer and validate entry */
