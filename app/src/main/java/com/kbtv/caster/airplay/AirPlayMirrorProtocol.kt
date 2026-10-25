@@ -202,6 +202,7 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
     // ===== RaopCallbackHandler: native events -> trace + coordinator =====
 
     override fun onVideoData(data: ByteArray, ntpTimeNs: Long, isH265: Boolean) {
+        lastVideoNs = System.nanoTime()
         videoOut?.onFrame(data, ntpTimeNs, isH265)
         mirrorFrames++
         if (mirrorFrames == 1L || mirrorFrames % RENDER_TRACE_EVERY == 0L) {
@@ -221,6 +222,33 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
         } catch (e: Exception) {
             Timber.e(e, "audio start failed")
         }
+    }
+
+    // Senders sometimes vanish without TEARDOWN (abrupt Wi-Fi loss, app
+    // kill): the session then stays "active" with a visible mirror surface
+    // and zero frames — a permanent black screen. Auto-close after 10s idle.
+    private var sessionWatchdog: java.util.Timer? = null
+    private var lastVideoNs = 0L
+
+    private fun startSessionWatchdog() {
+        stopSessionWatchdog()
+        lastVideoNs = System.nanoTime()
+        sessionWatchdog = java.util.Timer("session-watchdog", true).apply {
+            scheduleAtFixedRate(object : java.util.TimerTask() {
+                override fun run() {
+                    if (System.nanoTime() - lastVideoNs > 10_000_000_000L) {
+                        Timber.w("mirror idle >10s, closing session")
+                        TraceRecorder.log("mirror_idle_timeout")
+                        onMirrorRunning(false)
+                    }
+                }
+            }, 2000, 2000)
+        }
+    }
+
+    private fun stopSessionWatchdog() {
+        sessionWatchdog?.cancel()
+        sessionWatchdog = null
     }
 
     // Periodic engine counters into the trace: discriminates "no packets
@@ -297,6 +325,7 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
 
     override fun onMirrorRunning(running: Boolean) {
         mirrorFrames = 0
+        if (running) startSessionWatchdog() else stopSessionWatchdog()
         videoOut?.onSession(running)
         try {
             onMirrorSession?.invoke(running)
