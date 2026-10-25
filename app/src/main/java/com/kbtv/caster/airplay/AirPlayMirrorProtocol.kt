@@ -248,11 +248,15 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
         sessionWatchdog = java.util.Timer("session-watchdog", true).apply {
             scheduleAtFixedRate(object : java.util.TimerTask() {
                 override fun run() {
-                    // 30s: lock-screen pauses the stream temporarily; a real
-                    // sender-vanish is still reaped, just slower.
-                    if (System.nanoTime() - lastVideoNs > 30_000_000_000L) {
-                        Timber.w("mirror idle >30s, closing session")
+                    // 10s, not 30s: the 2026-10-25 field session showed iOS
+                    // stop-mirroring sends no TEARDOWN and no conn close —
+                    // idle was the ONLY end signal, so a long timeout left a
+                    // zombie "connected" screen. Lock-screen resume is covered
+                    // by the self-heal reopen in onVideoData, not by waiting.
+                    if (System.nanoTime() - lastVideoNs > 10_000_000_000L) {
+                        Timber.w("mirror idle >10s, closing session")
                         TraceRecorder.log("mirror_idle_timeout")
+                        onAudioTeardown()
                         onMirrorRunning(false)
                     }
                 }
@@ -319,10 +323,16 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
 
     override fun onConnectionDestroy() {
         TraceRecorder.log("mirror_conn_destroy")
+        // A closed RTSP connection ends mirroring even without TEARDOWN.
+        // Safe under nohold takeover: the evicted old connection always
+        // destroys before the new session's first mirror frame arrives.
+        if (mirrorUiActive) onMirrorRunning(false)
     }
 
     override fun onConnectionReset(reason: Int) {
         TraceRecorder.log("mirror_conn_reset", "reason" to reason)
+        // 1 = RESET_TYPE_RTP_SHUTDOWN: TEARDOWN 110, sender ended mirroring.
+        if (reason == 1 && mirrorUiActive) onMirrorRunning(false)
     }
 
     override fun onDisplayPin(pin: String) {
