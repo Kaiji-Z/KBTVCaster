@@ -784,7 +784,7 @@ class MirrorVideoRenderer {
          * At mirror frame rates 8 held ~250ms of standing latency (live p95
          * 327ms); 2 bounds the queue wait to ~2 frame intervals. */
         const val CATCHUP_PENDING_NALS = 2
-        const val MAX_RESTARTS = 4
+        const val MAX_RESTARTS = 6
         /** NALs fed with zero decoder output before treating it as stalled. */
         const val STALL_FED_THRESHOLD = 30L
         /** Hard ceiling on the stall window; must exceed the codec start time. */
