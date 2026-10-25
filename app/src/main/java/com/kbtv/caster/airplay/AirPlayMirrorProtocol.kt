@@ -201,8 +201,18 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
 
     // ===== RaopCallbackHandler: native events -> trace + coordinator =====
 
+    @Volatile
+    private var mirrorUiActive = false
+
     override fun onVideoData(data: ByteArray, ntpTimeNs: Long, isH265: Boolean) {
         lastVideoNs = System.nanoTime()
+        // Self-heal on lock-screen resume: the idle watchdog may have closed
+        // the session while the sender was paused; when its stream comes back
+        // without a new SETUP, reopen instead of rendering into a dead session.
+        if (!mirrorUiActive && mirrorFrames > 0) {
+            Timber.w("frames resumed after session close — reopening")
+            onMirrorRunning(true)
+        }
         videoOut?.onFrame(data, ntpTimeNs, isH265)
         mirrorFrames++
         if (mirrorFrames == 1L || mirrorFrames % RENDER_TRACE_EVERY == 0L) {
@@ -238,8 +248,10 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
         sessionWatchdog = java.util.Timer("session-watchdog", true).apply {
             scheduleAtFixedRate(object : java.util.TimerTask() {
                 override fun run() {
-                    if (System.nanoTime() - lastVideoNs > 10_000_000_000L) {
-                        Timber.w("mirror idle >10s, closing session")
+                    // 30s: lock-screen pauses the stream temporarily; a real
+                    // sender-vanish is still reaped, just slower.
+                    if (System.nanoTime() - lastVideoNs > 30_000_000_000L) {
+                        Timber.w("mirror idle >30s, closing session")
                         TraceRecorder.log("mirror_idle_timeout")
                         onMirrorRunning(false)
                     }
@@ -327,6 +339,7 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
 
     override fun onMirrorRunning(running: Boolean) {
         mirrorFrames = 0
+        mirrorUiActive = running
         if (running) startSessionWatchdog() else stopSessionWatchdog()
         videoOut?.onSession(running)
         try {
