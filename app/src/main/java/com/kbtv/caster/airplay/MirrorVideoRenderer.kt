@@ -446,9 +446,10 @@ class MirrorVideoRenderer {
         // restarts into the same mode burn seconds of black each time. The
         // buffer+blit tier is the proven-working path on this TV.
         var starved = false
-        if (lastDecoderError is IllegalStateException &&
-            lastDecoderError?.message?.contains("no input buffer") == true && !bufferMode
-        ) {
+        // Degrade on ANY failure that rendered zero frames in surface mode:
+        // the firmware jams two ways (input buffers withheld OR output
+        // stalled) and both mean the mode is unusable for this session.
+        if (!bufferMode && renderedFrames == 0L) {
             surfaceModeStarves++
             starved = surfaceModeStarves >= 1
         }
