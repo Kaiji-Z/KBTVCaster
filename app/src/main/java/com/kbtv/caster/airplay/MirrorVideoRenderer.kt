@@ -55,6 +55,8 @@ class MirrorVideoRenderer {
     private var codec: MediaCodec? = null
     private var feeder: Thread? = null
     private var restartsAllowed = 0
+    private var surfaceModeStarves = 0
+    private var lastDecoderError: Exception? = null
 
     // render-side only (feeder thread)
     private var renderedFrames = 0L
@@ -120,6 +122,11 @@ class MirrorVideoRenderer {
             else {
                 width = w
                 height = h
+                // new configuration: fresh restart budget — resolution flips
+                // (portrait <-> landscape video) must not exhaust the budget
+                // set by earlier unrelated stalls
+                restartsAllowed = MAX_RESTARTS
+                glDisplay?.setDecodeBufferSize(w, h)
                 // The next stream carries new parameter sets: drop the stale
                 // ones or the restarted codec configures with the previous
                 // resolution's SPS/PPS (landscape-video switch 500x1080 ->
@@ -155,6 +162,8 @@ class MirrorVideoRenderer {
                 csd0 = null
                 csd1 = null
                 restartsAllowed = MAX_RESTARTS
+                surfaceModeStarves = 0
+                lastDecoderError = null
                 maybeStartCodecLocked()
             }
         }
@@ -240,6 +249,12 @@ class MirrorVideoRenderer {
     private fun feederLoop() {
         val info = MediaCodec.BufferInfo()
         var starveSinceNs = 0L
+        // output-stall watchdog: the MStar firmware occasionally stops
+        // producing output while still accepting input (2026-10-25 field
+        // session: input flowed 24s at 0.5fps output, then the sender gave
+        // up). Restarting the codec on stall recovers within the window.
+        var lastOutputNs = System.nanoTime()
+        var fedSinceOutput = 0L
         while (true) {
             var codecRef: MediaCodec
             val nal: PendingNal?
@@ -280,6 +295,7 @@ class MirrorVideoRenderer {
                                     "hex=${nal.data.take(16).joinToString("") { "%02x".format(it) }}")
                         }
                         starveSinceNs = 0
+                        fedSinceOutput++
                     } else {
                         // The MStar codec hands out input buffers only ~40ms
                         // after start(); a dequeue timeout here must NOT
@@ -295,8 +311,25 @@ class MirrorVideoRenderer {
                         }
                     }
                 }
+                val framesBefore = renderedFrames
                 drainOutputs(codecRef, info)
+                if (renderedFrames > framesBefore) {
+                    lastOutputNs = System.nanoTime()
+                    fedSinceOutput = 0
+                    // a healthy decode refreshes the restart budget: the cap
+                    // exists to stop endless jammed cycles, not to kill
+                    // sessions that recovered
+                    restartsAllowed = MAX_RESTARTS
+                } else if (fedSinceOutput > STALL_FED_THRESHOLD &&
+                    System.nanoTime() - lastOutputNs > STALL_RESTART_NS
+                ) {
+                    throw IllegalStateException(
+                        "decoder output stalled: $fedSinceOutput NALs fed, none decoded in " +
+                            "${(System.nanoTime() - lastOutputNs) / 1_000_000}ms",
+                    )
+                }
             } catch (e: Exception) {
+                lastDecoderError = e
                 Timber.e(e, "mirror decoder error after $renderedFrames frames")
                 handleCodecError()
                 return
@@ -409,7 +442,21 @@ class MirrorVideoRenderer {
     }
 
     private fun handleCodecError() {
+        // Degrade: once the firmware's surface-mode jammed this session,
+        // restarts into the same mode burn seconds of black each time. The
+        // buffer+blit tier is the proven-working path on this TV.
+        var starved = false
+        if (lastDecoderError is IllegalStateException &&
+            lastDecoderError?.message?.contains("no input buffer") == true && !bufferMode
+        ) {
+            surfaceModeStarves++
+            starved = surfaceModeStarves >= 1
+        }
         val (oldCodec, oldFeeder) = synchronized(lock) {
+            if (starved) {
+                bufferMode = true
+                Timber.w("surface mode jammed; falling back to buffer+blit for this session")
+            }
             stopCodecLocked() to feeder.also { feeder = null }
         }
         oldFeeder?.let { if (it !== Thread.currentThread()) it.join(300) }
@@ -459,6 +506,7 @@ class MirrorVideoRenderer {
             c.start()
             Timber.i("mirror decoder started: name=${c.name} bufferMode=$bufferMode w=$width h=$height")
             TraceRecorder.log("mirror_decoder_started", "codec" to c.name, "bufferMode" to bufferMode)
+            glDisplay?.setDecodeBufferSize(width, height)
             codec = c
             val t = Thread({ feederLoop() }, "mirror-feeder").apply { start() }
             feeder = t
@@ -484,14 +532,22 @@ class MirrorVideoRenderer {
                     // DISPLAY surface is attached and the CPU blit tier died
                     // on 1920x1080; DecoderAbTest proved SurfaceTexture+these
                     // keys decode 648/649 frames. GL-forward, blit as fallback.
-                    bufferMode = false
-                    val gd = MirrorGlDisplay(target)
-                    val decodeSurface = try { gd.createDecoderSurface(2000) } catch (e: Exception) { null }
-                    if (decodeSurface != null) {
-                        glDisplay = gd
-                        c.configure(format, decodeSurface, null, 0)
+                    // Once surface mode starved this session, honor the
+                    // degrade flag — unconditionally resetting it here made
+                    // every restart re-enter the jammed mode (2026-10-25).
+                    if (surfaceModeStarves == 0) {
+                        bufferMode = false
+                        val gd = MirrorGlDisplay(target, width, height)
+                        val decodeSurface = try { gd.createDecoderSurface(2000) } catch (e: Exception) { null }
+                        if (decodeSurface != null) {
+                            glDisplay = gd
+                            c.configure(format, decodeSurface, null, 0)
+                        } else {
+                            gd.release()
+                            bufferMode = true
+                            c.configure(format, null, null, 0)
+                        }
                     } else {
-                        gd.release()
                         bufferMode = true
                         c.configure(format, null, null, 0)
                     }
@@ -727,10 +783,16 @@ class MirrorVideoRenderer {
          * At mirror frame rates 8 held ~250ms of standing latency (live p95
          * 327ms); 2 bounds the queue wait to ~2 frame intervals. */
         const val CATCHUP_PENDING_NALS = 2
-        const val MAX_RESTARTS = 1
+        const val MAX_RESTARTS = 4
+        /** NALs fed with zero decoder output before treating it as stalled. */
+        const val STALL_FED_THRESHOLD = 30L
+        /** Hard ceiling on the stall window; must exceed the codec start time. */
+        const val STALL_RESTART_NS = 2_000_000_000L
         const val DEQUEUE_TIMEOUT_US = 10_000L
         const val POLL_IDLE_MS = 5L
-        const val STARVE_ABORT_NS = 20_000_000_000L
+        // 5s: the field firmware sometimes stops granting input buffers
+        // outright; 20s of black before recovery was unacceptable live.
+        const val STARVE_ABORT_NS = 5_000_000_000L
         const val STATS_EVERY = 100L
         val SOFTWARE_DECODERS = listOf("c2.android.avc.decoder", "OMX.google.h264.decoder")
     }
