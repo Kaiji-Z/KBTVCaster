@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit
  * on teardown; any init failure surfaces as a null decoder Surface so the
  * renderer can fall back to the CPU blit tier.
  */
-class MirrorGlDisplay(private val displaySurface: Surface) {
+class MirrorGlDisplay(private val displaySurface: Surface, private val decodeWidth: Int, private val decodeHeight: Int) {
 
     private val thread = HandlerThread("mirror-gl").apply { start() }
     private val handler = Handler(thread.looper)
@@ -48,6 +48,8 @@ class MirrorGlDisplay(private val displaySurface: Surface) {
     private var decodeTexture: SurfaceTexture? = null
     private var decodeSurfaceRef: Surface? = null
     private var program = 0
+    private var drewFrames = 0L
+    private var firstDrawLogged = false
     private val texMatrix = FloatArray(16)
     private val quad: ByteBuffer = ByteBuffer.allocateDirect(4 * 4 * 4)
         .order(ByteOrder.nativeOrder()).apply {
@@ -79,6 +81,12 @@ class MirrorGlDisplay(private val displaySurface: Surface) {
             if (!EGL14.eglInitialize(eglDisplay, ver, 0, ver, 1)) return
             val configs = arrayOfNulls<EGLConfig>(1)
             val num = IntArray(1)
+            // The shader forces alpha to 1.0 (see FRAGMENT_SHADER): this
+            // chipset's old GLES driver fed content-coupled sampled alpha
+            // into the alpha-bearing window surface, and SurfaceFlinger
+            // composited the video to shifting shades of black (2026-10-25
+            // field session) while counters and the raw-pixel test stayed
+            // green. ALPHA_SIZE stays 8 — ImageReader-based tests require it.
             val confAttribs = intArrayOf(
                 EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT or EGL14.EGL_PBUFFER_BIT,
                 EGL14.EGL_RED_SIZE, 8,
@@ -115,6 +123,10 @@ class MirrorGlDisplay(private val displaySurface: Surface) {
             program = buildProgram()
 
             val st = SurfaceTexture(textureId)
+            // pre-size BEFORE the producer connects: this chipset's OMX does
+            // not reliably resize the queue post-connection and a 1x1 default
+            // collapses every sample to one pixel (magnified-color screen)
+            st.setDefaultBufferSize(decodeWidth, decodeHeight)
             st.setOnFrameAvailableListener({ onFrame() }, handler)
             decodeTexture = st
             decodeSurfaceRef = Surface(st)
@@ -145,6 +157,26 @@ class MirrorGlDisplay(private val displaySurface: Surface) {
         if (ws === EGL14.EGL_NO_SURFACE && displaySurface.isValid && createWindowSurface()) {
             ws = windowSurface
         }
+        // SurfaceView resize without recreation leaves the EGL window surface
+        // at the old size (0x0 at first layout included) — rebuild on drift.
+        if (ws !== EGL14.EGL_NO_SURFACE) {
+            val sz = IntArray(1)
+            EGL14.eglQuerySurface(eglDisplay, ws, EGL14.EGL_WIDTH, sz, 0)
+            val w = sz[0]
+            EGL14.eglQuerySurface(eglDisplay, ws, EGL14.EGL_HEIGHT, sz, 0)
+            if (w == 0 || sz[0] == 0) {
+                Timber.w("mirror GL window surface is %dx%d — rebuilding", w, sz[0])
+                EGL14.eglDestroySurface(eglDisplay, ws)
+                windowSurface = EGL14.EGL_NO_SURFACE
+                currentSurface = EGL14.EGL_NO_SURFACE
+                if (displaySurface.isValid) createWindowSurface()
+                ws = windowSurface
+                if (ws === EGL14.EGL_NO_SURFACE) {
+                    st.updateTexImage()
+                    return
+                }
+            }
+        }
         // Consume every frame unconditionally: a full BufferQueue stalls the
         // decoder. With nowhere to show it, consume and drop.
         if (ws === EGL14.EGL_NO_SURFACE || !displaySurface.isValid) {
@@ -171,6 +203,26 @@ class MirrorGlDisplay(private val displaySurface: Surface) {
             return
         }
         currentSurface = ws
+        if (!firstDrawLogged) Timber.i("mirror GL made current on surface=%d", ws.hashCode())
+    }
+
+    /** Non-zero once at least one frame reached the display surface. */
+    fun drewFrameCount(): Long = drewFrames
+
+    /**
+     * Fresh SurfaceTextures default to a 1x1 buffer; this chipset's OMX
+     * producer does not reliably resize it, so every sample landed on one
+     * content-coupled pixel — the live screen showed a single color filling
+     * the TV (2026-10-25). Call when the stream resolution is known.
+     */
+    fun setDecodeBufferSize(width: Int, height: Int) {
+        handler.post {
+            try {
+                decodeTexture?.setDefaultBufferSize(width, height)
+            } catch (e: Exception) {
+                Timber.w(e, "mirror GL setDefaultBufferSize")
+            }
+        }
     }
 
     private fun drawFrame(ws: EGLSurface) {
@@ -183,7 +235,18 @@ class MirrorGlDisplay(private val displaySurface: Surface) {
         EGL14.eglQuerySurface(eglDisplay, ws, EGL14.EGL_WIDTH, size, 0)
         val width = size[0]
         EGL14.eglQuerySurface(eglDisplay, ws, EGL14.EGL_HEIGHT, size, 0)
-        GLES20.glViewport(0, 0, width, size[0])
+        // Aspect-fit letterbox: a portrait 500x1080 stream must not stretch
+        // across the 1920x1080 panel (the fullscreen quad is stretch-to-fill).
+        GLES20.glClearColor(0f, 0f, 0f, 1f)
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+        if (width > 0 && size[0] > 0 && decodeWidth > 0 && decodeHeight > 0) {
+            val fit = minOf(width.toFloat() / decodeWidth, size[0].toFloat() / decodeHeight)
+            val vw = (decodeWidth * fit).toInt()
+            val vh = (decodeHeight * fit).toInt()
+            GLES20.glViewport((width - vw) / 2, (size[0] - vh) / 2, vw, vh)
+        } else {
+            GLES20.glViewport(0, 0, width, size[0])
+        }
         GLES20.glUseProgram(program)
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
         GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
@@ -200,15 +263,45 @@ class MirrorGlDisplay(private val displaySurface: Surface) {
             texMatrix[12], texMatrix[13], texMatrix[14], texMatrix[15])
         val posLoc = GLES20.glGetAttribLocation(program, "aPosition")
         val uvLoc = GLES20.glGetAttribLocation(program, "aTexCoord")
+        if (!firstDrawLogged) {
+            val err = GLES20.glGetError()
+            Timber.i("mirror GL draw locs pos=%d uv=%d glErr=0x%x progLinked ok", posLoc, uvLoc, err)
+        }
         quad.position(0)
         GLES20.glVertexAttribPointer(posLoc, 2, GLES20.GL_FLOAT, false, 16, quad)
         GLES20.glEnableVertexAttribArray(posLoc)
-        quad.position(2)
+        quad.position(8)  // byte offset: u,v are floats 2,3 (ByteBuffer positions are BYTES)
         GLES20.glVertexAttribPointer(uvLoc, 2, GLES20.GL_FLOAT, false, 16, quad)
         GLES20.glEnableVertexAttribArray(uvLoc)
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        if (!firstDrawLogged) {
+            // shader-output probe: read back corners + center of the drawn
+            // framebuffer BEFORE swap — separates "shader produced garbage"
+            // from "compositor lost it"
+            val px = IntArray(4)
+            val buf = IntArray(4)
+            val glb = java.nio.IntBuffer.wrap(buf)
+            GLES20.glReadPixels(width / 4, size[0] / 4, 1, 1, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, glb); px[0] = buf[0]
+            glb.position(0)
+            GLES20.glReadPixels(width / 2, size[0] / 2, 1, 1, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, glb); px[1] = buf[0]
+            glb.position(0)
+            GLES20.glReadPixels(3 * width / 4, 3 * size[0] / 4, 1, 1, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, glb); px[2] = buf[0]
+            glb.position(0)
+            GLES20.glReadPixels(1, 1, 1, 1, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, glb); px[3] = buf[0]
+            Timber.i("mirror GL readback rgba=%s", px.joinToString(" ") { "%08x".format(it) })
+        }
         if (!EGL14.eglSwapBuffers(eglDisplay, ws)) {
             Timber.w("mirror GL swap failed: 0x%x", EGL14.eglGetError())
+        } else {
+            drewFrames++
+            if (!firstDrawLogged) {
+                firstDrawLogged = true
+                Timber.i("mirror GL first draw %dx%d tex=[%s]",
+                    width, size[0],
+                    texMatrix.take(8).joinToString(" ") { "%.2f".format(it) })
+            } else if (drewFrames % 60 == 0L) {
+                Timber.i("mirror GL drew %d frames", drewFrames)
+            }
         }
     }
 
@@ -284,7 +377,10 @@ class MirrorGlDisplay(private val displaySurface: Surface) {
             uniform samplerExternalOES uTexture;
             varying vec2 vTexCoord;
             void main() {
-                gl_FragColor = texture2D(uTexture, vTexCoord);
+                // DIAGNOSTIC (2026-10-25): raw UVs, transform bypassed. A
+                // correct-looking frame (possibly flipped) implicates the
+                // transform path; a solid color implicates attributes/texture.
+                gl_FragColor = vec4(texture2D(uTexture, vTexCoord).rgb, 1.0);
             }
         """
     }
