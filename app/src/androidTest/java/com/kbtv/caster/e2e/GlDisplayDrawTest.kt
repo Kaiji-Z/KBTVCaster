@@ -70,6 +70,7 @@ class GlDisplayDrawTest {
         Thread.sleep(2500)  // let the GL thread draw and the reader receive
 
         var sawNonBlack = false
+        val distinct = HashSet<Int>()
         var img = reader.acquireLatestImage()
         var tries = 0
         while (img == null && tries < 10) {
@@ -93,11 +94,16 @@ class GlDisplayDrawTest {
                     val lum = px[0].toInt() and 0xFF or (px[1].toInt() and 0xFF) or (px[2].toInt() and 0xFF)
                     if (lum > maxVal) maxVal = lum
                     if (lum > 24) sawNonBlack = true
+                    distinct.add(((px[0].toInt() and 0xFF) / 32 shl 10) or ((px[1].toInt() and 0xFF) / 32 shl 5) or ((px[2].toInt() and 0xFF) / 32))
                     x += 16
                 }
                 y += 16
             }
-            android.util.Log.i("GlDraw", "acquired ${img.width}x${img.height} maxLum=$maxVal nonBlack=$sawNonBlack")
+            // Structure check: a real frame holds many distinct colors; the
+            // magnified-single-pixel bug (live TV showed one content-coupled
+            // color) has 1-2.
+            android.util.Log.i("GlDraw",
+                "acquired ${img.width}x${img.height} maxLum=$maxVal nonBlack=$sawNonBlack distinctColors=${distinct.size}")
             img.close()
         } else {
             android.util.Log.i("GlDraw", "NO FRAME ACQUIRED from ImageReader")
@@ -106,5 +112,6 @@ class GlDisplayDrawTest {
         renderer.release()
         reader.close()
         assertTrue("GL path drew no image or all-black (acquired=${img != null})", sawNonBlack)
+        android.util.Log.i("GlDraw", "STRUCTURE distinctColors=" + distinct.size)
     }
 }

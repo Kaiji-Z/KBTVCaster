@@ -41,7 +41,7 @@ class DecoderAbTest {
     private fun runVariant(name: String, dump: ByteArray, nals: List<Nal>, codecName: String,
                            blobCsd: Boolean, sliceOnly: Boolean, lowLatency: Boolean,
                            surface: Surface?, hugePts: Boolean = false,
-                           llMode: String = "all"): Int {
+                           llMode: String = "all", w: Int = 500, h: Int = 1080): Int {
         var sps: ByteArray? = null
         var pps: ByteArray? = null
         for (n in nals) {
@@ -50,7 +50,7 @@ class DecoderAbTest {
             if (n.type == 8 && pps == null) pps = bytes
         }
         if (sps == null || pps == null) return -1
-        val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, 500, 1080).apply {
+        val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, w, h).apply {
             if (blobCsd) {
                 val blob = sps!! + pps!!
                 setByteBuffer("csd-0", java.nio.ByteBuffer.wrap(blob))
@@ -95,7 +95,7 @@ class DecoderAbTest {
                 if (sliceOnly && !isSlice) continue
                 if (!sliceOnly && !(isSlice || n.type == 6 || n.type == 7 || n.type == 8)) continue
                 val bytes = dump.copyOfRange(n.offset, n.end)
-                val idx = codec.dequeueInputBuffer(20_000)
+                val idx = codec.dequeueInputBuffer(500_000)
                 if (idx < 0) continue
                 codec.getInputBuffer(idx)!!.put(bytes)
                 codec.queueInputBuffer(idx, 0, bytes.size,
@@ -189,6 +189,41 @@ class DecoderAbTest {
         texSurf.release()
         android.util.Log.i("DecoderAb", "SURFACE-RECIPE best=$anyDecoded")
         // informational: no hard assert — a null result just confirms buffer mode
+    }
+
+
+    /**
+     * Profile x resolution decode envelope on synthetic streams. Context:
+     * live iPhone landscape video (1920x1080) gets ZERO input buffers from
+     * the MStar in every configuration, yet LEBO plays the same landscape
+     * video smoothly on this TV — so the wall must be conditional. Probes:
+     * 1080-high / 720-high / 720-baseline, no-ll + no-surface (decoder-level).
+     */
+    @Test
+    fun resolutionLatencyMatrix() {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        data class Case(val label: String, val fileName: String, val w: Int, val h: Int)
+        val cases = listOf(
+            Case("1080-high", "t1080-high.h264", 1920, 1080),
+            Case("720-high", "t720-high.h264", 1280, 720),
+            Case("720-base", "t720-base.h264", 1280, 720),
+        )
+        for (c in cases) {
+            val label = c.label
+            val fileName = c.fileName
+            val w = c.w
+            val h = c.h
+            val src = java.io.File("/data/local/tmp/" + fileName)
+            val f = java.io.File(ctx.filesDir, "trace/" + fileName)
+            if (!f.isFile || f.length() != src.length()) f.writeBytes(src.readBytes())
+            org.junit.Assume.assumeTrue(fileName + " missing", f.isFile)
+            val dump = f.readBytes()
+            val nals = parseNals(dump)
+            val n = runVariant(label + "-nosurf", dump, nals, "OMX.MS.AVC.Decoder",
+                blobCsd = true, sliceOnly = false, lowLatency = false,
+                surface = null, llMode = "none", w = w, h = h)
+            android.util.Log.i("DecoderAb", "ENVELOPE " + label + " -> decoded=" + n)
+        }
     }
 
     @Test
