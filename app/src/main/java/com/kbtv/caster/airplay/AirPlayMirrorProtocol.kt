@@ -206,6 +206,7 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
 
     override fun onVideoData(data: ByteArray, ntpTimeNs: Long, isH265: Boolean) {
         lastVideoNs = System.nanoTime()
+        pauseGrace?.cancel(); pauseGrace = null
         // Self-heal on lock-screen resume: the idle watchdog may have closed
         // the session while the sender was paused; when its stream comes back
         // without a new SETUP, reopen instead of rendering into a dead session.
@@ -333,6 +334,34 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
         TraceRecorder.log("mirror_conn_reset", "reason" to reason)
         // 1 = RESET_TYPE_RTP_SHUTDOWN: TEARDOWN 110, sender ended mirroring.
         if (reason == 1 && mirrorUiActive) onMirrorRunning(false)
+    }
+
+    // iOS stop-mirroring sends video_pause and NOTHING else (no TEARDOWN,
+    // no connection close — 2026-10-25 field session): the only fast stop
+    // signal is pause followed by silence.
+    private var pauseGrace: java.util.Timer? = null
+
+    override fun onVideoPause() {
+        TraceRecorder.log("mirror_video_pause")
+        pauseGrace?.cancel()
+        pauseGrace = java.util.Timer("mirror-pause-grace", true).apply {
+            schedule(object : java.util.TimerTask() {
+                override fun run() {
+                    if (mirrorUiActive && System.nanoTime() - lastVideoNs > 3_000_000_000L) {
+                        Timber.w("video paused >3s with no frames — closing session")
+                        TraceRecorder.log("mirror_pause_close")
+                        onAudioTeardown()
+                        onMirrorRunning(false)
+                    }
+                }
+            }, 3000)
+        }
+    }
+
+    override fun onVideoResume() {
+        TraceRecorder.log("mirror_video_resume")
+        pauseGrace?.cancel()
+        pauseGrace = null
     }
 
     override fun onDisplayPin(pin: String) {

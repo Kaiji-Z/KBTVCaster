@@ -21,6 +21,8 @@ interface RaopCallbackHandler {
     fun onVideoScrub(positionSeconds: Float)
     fun onVideoRate(rate: Float)
     fun onVideoStop()
+    fun onVideoPause()
+    fun onVideoResume()
     // fired per sender GET /playback-info poll; polling starts before /play
     fun onVideoSessionPoll()
 }

@@ -22,6 +22,8 @@ typedef struct {
     jmethodID on_audio_teardown;
     jmethodID on_conn_init;
     jmethodID on_conn_destroy;
+    jmethodID on_video_pause;
+    jmethodID on_video_resume;
     jmethodID on_conn_reset;
     jmethodID on_display_pin;
     jmethodID on_metadata;

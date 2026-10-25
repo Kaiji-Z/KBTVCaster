@@ -57,6 +57,8 @@ void android_callbacks_init(android_callback_ctx_t *ctx, JNIEnv *env, jobject ca
     ctx->on_audio_teardown = (*env)->GetMethodID(env, cls, "onAudioTeardown", "()V");
     ctx->on_conn_init = (*env)->GetMethodID(env, cls, "onConnectionInit", "()V");
     ctx->on_conn_destroy = (*env)->GetMethodID(env, cls, "onConnectionDestroy", "()V");
+    ctx->on_video_pause = (*env)->GetMethodID(env, cls, "onVideoPause", "()V");
+    ctx->on_video_resume = (*env)->GetMethodID(env, cls, "onVideoResume", "()V");
     ctx->on_conn_reset = (*env)->GetMethodID(env, cls, "onConnectionReset", "(I)V");
     ctx->on_display_pin = (*env)->GetMethodID(env, cls, "onDisplayPin", "(Ljava/lang/String;)V");
     ctx->on_metadata = (*env)->GetMethodID(env, cls, "onMetadata", "([B)V");
@@ -195,8 +197,20 @@ static void _display_pin(void *cls, char *pin) {
 
 /* Stubs for less critical callbacks */
 static void _noop(void *cls) { (void)cls; }
-static void _video_pause(void *cls) { LOGI("video_pause"); }
-static void _video_resume(void *cls) { LOGI("video_resume"); }
+static void _video_pause(void *cls) {
+    android_callback_ctx_t *ctx = (android_callback_ctx_t *)cls;
+    LOGI("video_pause");
+    JNIEnv *env = _get_env(ctx);
+    if (!env) return;
+    (*env)->CallVoidMethod(env, ctx->callback_obj, ctx->on_video_pause);
+}
+static void _video_resume(void *cls) {
+    android_callback_ctx_t *ctx = (android_callback_ctx_t *)cls;
+    LOGI("video_resume");
+    JNIEnv *env = _get_env(ctx);
+    if (!env) return;
+    (*env)->CallVoidMethod(env, ctx->callback_obj, ctx->on_video_resume);
+}
 static void _conn_feedback(void *cls) { (void)cls; }
 static void _video_stop(void *cls);
 static void _video_reset(void *cls, reset_type_t t) {

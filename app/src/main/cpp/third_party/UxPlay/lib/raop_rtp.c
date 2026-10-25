@@ -386,6 +386,7 @@ raop_rtp_thread_udp(void *arg)
     socklen_t saddrlen = 0;
     bool got_remote_control_saddr = false;
     uint64_t video_arrival_offset = 0;
+    uint64_t kbtv_data_pkts = 0, kbtv_held = 0, kbtv_dequeues = 0;  /* [kbtv] audio gate counters */
 
     /* initial audio stream has no data */    
     unsigned char no_data_marker[] = {0x00, 0x68, 0x34, 0x00 };
@@ -491,7 +492,7 @@ raop_rtp_thread_udp(void *arg)
                 uint64_t client_ntp_sync_prev = 0;
                 uint64_t rtp_sync_prev = 0;
                 if (!raop_rtp->initial_sync) {
-                    logger_log(raop_rtp->logger, LOGGER_DEBUG, "first audio rtp sync");
+                    logger_log(raop_rtp->logger, LOGGER_INFO, "[kbtv] audio initial sync via control 0x54");
                     raop_rtp->initial_sync = true;
                 } else {
                    client_ntp_sync_prev = raop_rtp->client_ntp_sync;
@@ -577,6 +578,14 @@ raop_rtp_thread_udp(void *arg)
                 continue;
             }
 
+            kbtv_data_pkts++;
+            if (kbtv_data_pkts % 100 == 1) {
+                logger_log(raop_rtp->logger, LOGGER_INFO,
+                           "[kbtv] audio datapkts=%llu sync=%d ct=%d voff=%d held=%llu dq=%llu",
+                           (unsigned long long) kbtv_data_pkts, (int) raop_rtp->initial_sync,
+                           raop_rtp->ct, (int) (video_arrival_offset != 0),
+                           (unsigned long long) kbtv_held, (unsigned long long) kbtv_dequeues);
+            }
             if (!raop_rtp->initial_sync &&  raop_rtp->ct == 8 && video_arrival_offset) {
                 /* estimate a fake initial remote timestamp for video  synchronization  with AAC audio before the first rtp sync */
                  uint64_t ts = raop_ntp_get_local_time() - video_arrival_offset;
@@ -585,6 +594,7 @@ raop_rtp_thread_udp(void *arg)
                  raop_rtp->client_ntp_sync = ts;
                  raop_rtp->rtp_sync = byteutils_get_int_be(packet, 4);
                  raop_rtp->initial_sync = true;
+                 logger_log(raop_rtp->logger, LOGGER_INFO, "[kbtv] audio initial sync via video offset");
             }	    
 
             if (packetlen == 12 ||(packetlen == 16 && memcmp(packet + 12, no_data_marker, 4) == 0)) {
@@ -598,6 +608,7 @@ raop_rtp_thread_udp(void *arg)
             raop_buffer_enqueue(raop_rtp->buffer, packet, packetlen, 1);
 
             if (!raop_rtp->initial_sync) {
+                kbtv_held++;
                 /* wait until the first sync before dequeing ALAC */
                 continue;
             } else {
@@ -608,6 +619,7 @@ raop_rtp_thread_udp(void *arg)
                 uint32_t rtp_timestamp = 0;
 
                 while ((payload = raop_buffer_dequeue(raop_rtp->buffer, &payload_size, &rtp_timestamp, &seqnum, no_resend))) {
+                    kbtv_dequeues++;
                     audio_decode_struct audio_data; 
                     audio_data.rtp_time = rtp_timestamp;
                     audio_data.seqnum = seqnum;
