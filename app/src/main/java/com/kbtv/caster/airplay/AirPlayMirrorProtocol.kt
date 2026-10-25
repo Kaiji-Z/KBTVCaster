@@ -228,7 +228,9 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
     // kill): the session then stays "active" with a visible mirror surface
     // and zero frames — a permanent black screen. Auto-close after 10s idle.
     private var sessionWatchdog: java.util.Timer? = null
-    private var lastVideoNs = 0L
+
+    @Volatile
+    private var lastVideoNs = 0L  // written on the native callback thread, read by the watchdog timer
 
     private fun startSessionWatchdog() {
         stopSessionWatchdog()
