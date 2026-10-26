@@ -446,12 +446,13 @@ class MirrorVideoRenderer {
         // restarts into the same mode burn seconds of black each time. The
         // buffer+blit tier is the proven-working path on this TV.
         var starved = false
-        // Degrade on ANY failure that rendered zero frames in surface mode:
-        // the firmware jams two ways (input buffers withheld OR output
-        // stalled) and both mean the mode is unusable for this session.
+        // GL first: this firmware's CPU blit tier never produces output
+        // (field 2026-10-26: healthy upstream, black screen, skippedBlits
+        // climbing), so surface failures retry GL twice before the blit
+        // fallback — a start or resolution-flip stall must recover in GL.
         if (!bufferMode && renderedFrames == 0L) {
             surfaceModeStarves++
-            starved = surfaceModeStarves >= 1
+            starved = surfaceModeStarves >= 2
         }
         val (oldCodec, oldFeeder) = synchronized(lock) {
             if (starved) {
