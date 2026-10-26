@@ -125,6 +125,14 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
                 responder.start()
                 ownResponder = responder
             }
+
+            // MStar cold-boot decoder quirk: first create-decode is refused
+            // until a full cycle completes (多屏互动 warms it for itself —
+            // field 2026-10-26). Warm it here so the user's first cast works.
+            warmup = MirrorDecoderWarmup(
+                appContext.filesDir.resolve("trace/mirror-dump.h264"),
+                { mirrorUiActive },
+            ).apply { start() }
         } catch (e: Exception) {
             Timber.e(e, "Failed to start AirPlay mirror protocol")
             TraceRecorder.log("mirror_start_failed", "error" to e.message)
@@ -170,6 +178,8 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
     }
 
     override fun stop() {
+        warmup?.cancel()
+        warmup = null
         registrations.forEach {
             try {
                 nsd?.unregisterService(it)
@@ -203,6 +213,8 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
 
     @Volatile
     private var mirrorUiActive = false
+
+    private var warmup: MirrorDecoderWarmup? = null
 
     override fun onVideoData(data: ByteArray, ntpTimeNs: Long, isH265: Boolean) {
         lastVideoNs = System.nanoTime()
