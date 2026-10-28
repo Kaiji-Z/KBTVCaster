@@ -351,9 +351,7 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
                     // by the self-heal reopen in onVideoData, not by waiting.
                     if (System.nanoTime() - lastVideoNs > 10_000_000_000L) {
                         Timber.w("mirror idle >10s, closing session")
-                        TraceRecorder.log("mirror_idle_timeout")
-                        onAudioTeardown()
-                        onMirrorRunning(false)
+                        closeMirrorSession("mirror_idle_timeout")
                     }
                 }
             }, 2000, 2000)
@@ -437,7 +435,7 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
             // A closed RTSP connection ends mirroring even without TEARDOWN.
             // Safe under nohold takeover: the evicted old connection always
             // destroys before the new session's first mirror frame arrives.
-            if (mirrorUiActive) onMirrorRunning(false)
+            if (mirrorUiActive) closeMirrorSession("mirror_conn_close")
         }
     }
 
@@ -445,7 +443,7 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
         TraceRecorder.log("mirror_conn_reset", "reason" to reason)
         // 1 = RESET_TYPE_RTP_SHUTDOWN: TEARDOWN 110, sender ended mirroring.
         if (reason == 1) callbackExecutor.execute {
-            if (mirrorUiActive) onMirrorRunning(false)
+            if (mirrorUiActive) closeMirrorSession("mirror_conn_reset_close")
         }
     }
 
@@ -453,6 +451,17 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
     // no connection close — 2026-10-25 field session): the only fast stop
     // signal is pause followed by silence.
     private var pauseGrace: java.util.Timer? = null
+
+    // UxPlay's native threads die one by one across reconnect cycles (field
+    // 2026-10-29: httpd select loop gone after the 2nd session — RTSP
+    // accepts but never answers). Commercial receivers re-init their whole
+    // stack after every session; do the same: 5s after a close, rebuild.
+    private fun closeMirrorSession(traceEvent: String) {
+        TraceRecorder.log(traceEvent)
+        onAudioTeardown()
+        if (mirrorUiActive) onMirrorRunning(false)
+        appContext?.let { scheduleRestart(it) }
+    }
 
     override fun onVideoPause() {
         TraceRecorder.log("mirror_video_pause")
@@ -466,9 +475,7 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
                 override fun run() {
                     if (mirrorUiActive && System.nanoTime() - lastVideoNs > 3_000_000_000L) {
                         Timber.w("video paused >3s with no frames — closing session")
-                        TraceRecorder.log("mirror_pause_close")
-                        onAudioTeardown()
-                        onMirrorRunning(false)
+                        closeMirrorSession("mirror_pause_close")
                     }
                 }
             }, 3000)
