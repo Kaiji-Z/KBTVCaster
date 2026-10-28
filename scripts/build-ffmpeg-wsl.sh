@@ -58,7 +58,10 @@ build() { # $1=configure-arch $2=triple $3=abi-dir [$4=extra-flags]
     echo "== $abi done: $(ls -l "$REPO/app/src/main/cpp/prebuilt/ffmpeg/$abi/lib/" | tr '\n' ' ')"
 }
 
-build aarch64 aarch64-linux-android arm64-v8a
-build x86_64 x86_64-linux-android x86_64
-build x86 i686-linux-android x86 "--cpu=i686"
+# optional fourth arg: build only one ABI (armeabi-v7a = 32-bit TVs like the
+# Sony XR-85X90K; --cpu selects the armv7-a profile for the arm base arch)
+if [ -z "${3:-}" ] || [ "$3" = "armeabi-v7a" ]; then build arm armv7a-linux-androideabi armeabi-v7a "--cpu=armv7-a"; fi
+if [ -z "${3:-}" ] || [ "$3" = "arm64-v8a" ]; then build aarch64 aarch64-linux-android arm64-v8a; fi
+if [ -z "${3:-}" ] || [ "$3" = "x86_64" ]; then build x86_64 x86_64-linux-android x86_64; fi
+if [ -z "${3:-}" ] || [ "$3" = "x86" ]; then build x86 i686-linux-android x86 "--cpu=i686"; fi
 echo "ALL DONE"

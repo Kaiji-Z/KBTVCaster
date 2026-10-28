@@ -51,6 +51,8 @@ build() { # $1=openssl-target $2=abi-dir
     echo "== $abi done: $(ls -la "$REPO/app/src/main/cpp/prebuilt/openssl/$abi/lib/libcrypto.a")"
 }
 
-build android-arm64 arm64-v8a
-build android-x86_64 x86_64
+# optional third arg: build only one ABI (e.g. armeabi-v7a for 32-bit TVs)
+if [ -z "${3:-}" ] || [ "$3" = "armeabi-v7a" ]; then build android-arm armeabi-v7a; fi
+if [ -z "${3:-}" ] || [ "$3" = "arm64-v8a" ]; then build android-arm64 arm64-v8a; fi
+if [ -z "${3:-}" ] || [ "$3" = "x86_64" ]; then build android-x86_64 x86_64; fi
 echo "ALL DONE"
