@@ -387,6 +387,7 @@ raop_rtp_thread_udp(void *arg)
     bool got_remote_control_saddr = false;
     uint64_t video_arrival_offset = 0;
     uint64_t kbtv_data_pkts = 0, kbtv_held = 0, kbtv_dequeues = 0;  /* [kbtv] audio gate counters */
+    uint64_t kbtv_markers = 0, kbtv_real = 0;
 
     /* initial audio stream has no data */    
     unsigned char no_data_marker[] = {0x00, 0x68, 0x34, 0x00 };
@@ -581,10 +582,11 @@ raop_rtp_thread_udp(void *arg)
             kbtv_data_pkts++;
             if (kbtv_data_pkts % 100 == 1) {
                 logger_log(raop_rtp->logger, LOGGER_INFO,
-                           "[kbtv] audio datapkts=%llu sync=%d ct=%d voff=%d held=%llu dq=%llu",
+                           "[kbtv] audio datapkts=%llu sync=%d ct=%d voff=%d held=%llu dq=%llu mark=%llu real=%llu",
                            (unsigned long long) kbtv_data_pkts, (int) raop_rtp->initial_sync,
                            raop_rtp->ct, (int) (video_arrival_offset != 0),
-                           (unsigned long long) kbtv_held, (unsigned long long) kbtv_dequeues);
+                           (unsigned long long) kbtv_held, (unsigned long long) kbtv_dequeues,
+                           (unsigned long long) kbtv_markers, (unsigned long long) kbtv_real);
             }
             if (!raop_rtp->initial_sync &&  raop_rtp->ct == 8 && video_arrival_offset) {
                 /* estimate a fake initial remote timestamp for video  synchronization  with AAC audio before the first rtp sync */
@@ -598,6 +600,7 @@ raop_rtp_thread_udp(void *arg)
             }	    
 
             if (packetlen == 12 ||(packetlen == 16 && memcmp(packet + 12, no_data_marker, 4) == 0)) {
+                kbtv_markers++;
                 /* this is a "no data" packet */
 	        /* the first such packet could be used to provide the initial rtptime and seqnum formerly given in the RECORD request */
                 continue;
@@ -605,6 +608,7 @@ raop_rtp_thread_udp(void *arg)
 	    
             if (raop_rtp->ct == 2 && packetlen == 44)  continue;   /* ignore the ALAC packets with format information only. */
 
+            kbtv_real++;
             raop_buffer_enqueue(raop_rtp->buffer, packet, packetlen, 1);
 
             if (!raop_rtp->initial_sync) {

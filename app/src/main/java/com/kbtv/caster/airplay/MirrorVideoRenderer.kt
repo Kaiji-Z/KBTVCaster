@@ -362,7 +362,24 @@ class MirrorVideoRenderer {
             }
             when {
                 oIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> return
-                oIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> Unit
+                oIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                    // In-band resolution switches (portrait home -> landscape
+                    // video) surface here with the stream's true dimensions
+                    // from SPS: drive the letterbox from these, not from the
+                    // sender's flapping telemetry.
+                    try {
+                        val fmt = codecRef.outputFormat
+                        var fw = fmt.getInteger(MediaFormat.KEY_WIDTH)
+                        var fh = fmt.getInteger(MediaFormat.KEY_HEIGHT)
+                        if (fmt.containsKey(MediaFormat.KEY_CROP_LEFT)) {
+                            fw = fmt.getInteger(MediaFormat.KEY_CROP_RIGHT) - fmt.getInteger(MediaFormat.KEY_CROP_LEFT) + 1
+                            fh = fmt.getInteger(MediaFormat.KEY_CROP_BOTTOM) - fmt.getInteger(MediaFormat.KEY_CROP_TOP) + 1
+                        }
+                        if (fw > 0 && fh > 0) glDisplay?.setDecodeBufferSize(fw, fh)
+                    } catch (e: Exception) {
+                        Timber.w(e, "mirror output format dims")
+                    }
+                }
                 oIdx == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED -> Unit
                 info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0 ->
                     codecRef.releaseOutputBuffer(oIdx, false)

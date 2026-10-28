@@ -32,7 +32,14 @@ import java.util.concurrent.TimeUnit
  * on teardown; any init failure surfaces as a null decoder Surface so the
  * renderer can fall back to the CPU blit tier.
  */
-class MirrorGlDisplay(private val displaySurface: Surface, private val decodeWidth: Int, private val decodeHeight: Int) {
+class MirrorGlDisplay(private val displaySurface: Surface, initialWidth: Int, initialHeight: Int) {
+
+    // Letterbox aspect source. The sender's telemetry alternates content and
+    // display dims, so these follow the decoder's ACTUAL output format (set
+    // via setDecodeBufferSize from the renderer's format-changed hook), not
+    // the configured size.
+    @Volatile var decodeWidth: Int = initialWidth
+    @Volatile var decodeHeight: Int = initialHeight
 
     private val thread = HandlerThread("mirror-gl").apply { start() }
     private val handler = Handler(thread.looper)
@@ -216,6 +223,9 @@ class MirrorGlDisplay(private val displaySurface: Surface, private val decodeWid
      * the TV (2026-10-25). Call when the stream resolution is known.
      */
     fun setDecodeBufferSize(width: Int, height: Int) {
+        if (width <= 0 || height <= 0) return
+        decodeWidth = width
+        decodeHeight = height
         handler.post {
             try {
                 decodeTexture?.setDefaultBufferSize(width, height)
