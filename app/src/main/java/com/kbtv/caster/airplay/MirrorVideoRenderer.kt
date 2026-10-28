@@ -375,7 +375,11 @@ class MirrorVideoRenderer {
                             fw = fmt.getInteger(MediaFormat.KEY_CROP_RIGHT) - fmt.getInteger(MediaFormat.KEY_CROP_LEFT) + 1
                             fh = fmt.getInteger(MediaFormat.KEY_CROP_BOTTOM) - fmt.getInteger(MediaFormat.KEY_CROP_TOP) + 1
                         }
-                        if (fw > 0 && fh > 0) glDisplay?.setDecodeBufferSize(fw, fh)
+                        // mid-flip the MStar firmware reports degenerate crops
+                        // (e.g. 1x9): a tiny letterbox viewport renders pure
+                        // black at 60fps. Ignore implausible dims — the next
+                        // format change with real SPS dims will land.
+                        if (fw >= 64 && fh >= 64) glDisplay?.setDecodeBufferSize(fw, fh)
                     } catch (e: Exception) {
                         Timber.w(e, "mirror output format dims")
                     }

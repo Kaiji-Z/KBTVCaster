@@ -284,6 +284,14 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
 
     private val restartHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
+    // Session-level callbacks arrive on NATIVE connection threads; heavy work
+    // here (codec teardown, audio stop) blocked the httpd loop and wedged the
+    // receiver after every session (field 2026-10-29: port listening, RTSP
+    // never answered). Everything except the per-frame path runs here.
+    private val callbackExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "mirror-callbacks").apply { isDaemon = true }
+    }
+
     override fun onVideoData(data: ByteArray, ntpTimeNs: Long, isH265: Boolean) {
         lastVideoNs = System.nanoTime()
         pauseGrace?.cancel(); pauseGrace = null
@@ -405,6 +413,10 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
     override fun onClientVolume(): Float = 0f
 
     override fun onAudioTeardown() {
+        callbackExecutor.execute { handleAudioTeardown() }
+    }
+
+    private fun handleAudioTeardown() {
         audioStatsTimer?.cancel()
         audioStatsTimer = null
         try {
@@ -421,16 +433,20 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
 
     override fun onConnectionDestroy() {
         TraceRecorder.log("mirror_conn_destroy")
-        // A closed RTSP connection ends mirroring even without TEARDOWN.
-        // Safe under nohold takeover: the evicted old connection always
-        // destroys before the new session's first mirror frame arrives.
-        if (mirrorUiActive) onMirrorRunning(false)
+        callbackExecutor.execute {
+            // A closed RTSP connection ends mirroring even without TEARDOWN.
+            // Safe under nohold takeover: the evicted old connection always
+            // destroys before the new session's first mirror frame arrives.
+            if (mirrorUiActive) onMirrorRunning(false)
+        }
     }
 
     override fun onConnectionReset(reason: Int) {
         TraceRecorder.log("mirror_conn_reset", "reason" to reason)
         // 1 = RESET_TYPE_RTP_SHUTDOWN: TEARDOWN 110, sender ended mirroring.
-        if (reason == 1 && mirrorUiActive) onMirrorRunning(false)
+        if (reason == 1) callbackExecutor.execute {
+            if (mirrorUiActive) onMirrorRunning(false)
+        }
     }
 
     // iOS stop-mirroring sends video_pause and NOTHING else (no TEARDOWN,
@@ -440,6 +456,10 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
 
     override fun onVideoPause() {
         TraceRecorder.log("mirror_video_pause")
+        callbackExecutor.execute { handleVideoPause() }
+    }
+
+    private fun handleVideoPause() {
         pauseGrace?.cancel()
         pauseGrace = java.util.Timer("mirror-pause-grace", true).apply {
             schedule(object : java.util.TimerTask() {
@@ -457,8 +477,10 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
 
     override fun onVideoResume() {
         TraceRecorder.log("mirror_video_resume")
-        pauseGrace?.cancel()
-        pauseGrace = null
+        callbackExecutor.execute {
+            pauseGrace?.cancel()
+            pauseGrace = null
+        }
     }
 
     override fun onDisplayPin(pin: String) {
