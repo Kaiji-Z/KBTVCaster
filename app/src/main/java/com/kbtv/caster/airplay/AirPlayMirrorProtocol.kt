@@ -315,9 +315,19 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
         }
     }
 
+    // The sender's telemetry alternates content and display dimensions every
+    // few seconds (500x1080 <-> 1920x1080 — field 2026-10-28); each distinct
+    // report used to tear the decoder down and restart it. Act only on a
+    // size that repeats consecutively: real changes persist, flapping dies.
+    private var lastSizeW = 0f
+    private var lastSizeH = 0f
+
     override fun onVideoSize(srcW: Float, srcH: Float, w: Float, h: Float) {
         TraceRecorder.log("mirror_video_size", "w" to w, "h" to h)
-        videoOut?.setResolution(w.toInt(), h.toInt())
+        val act = lastSizeW == 0f || (w == lastSizeW && h == lastSizeH)
+        lastSizeW = w
+        lastSizeH = h
+        if (act) videoOut?.setResolution(w.toInt(), h.toInt())
     }
 
     override fun onVolumeChange(volume: Float) {
