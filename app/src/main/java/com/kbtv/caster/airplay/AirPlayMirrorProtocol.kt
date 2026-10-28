@@ -130,7 +130,13 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
             // until a full cycle completes (多屏互动 warms it for itself —
             // field 2026-10-26). Warm it here so the user's first cast works.
             warmup = MirrorDecoderWarmup(
-                appContext.filesDir.resolve("trace/mirror-dump.h264"),
+                {
+                    val f = appContext.filesDir.resolve("trace/mirror-dump.h264")
+                    f.takeIf { it.exists() }?.readBytes() ?: runCatching {
+                        // fresh installs: bundled synthetic test stream
+                        appContext.assets.open("mirror-warmup.h264").use { it.readBytes() }
+                    }.getOrNull()
+                },
                 { mirrorUiActive },
             ).apply { start() }
         } catch (e: Exception) {

@@ -20,7 +20,7 @@ import timber.log.Timber
  * storms are what deepen the firmware wedge in the first place.
  */
 class MirrorDecoderWarmup(
-    private val dumpFile: java.io.File,
+    private val dumpData: () -> ByteArray?,
     private val sessionActive: () -> Boolean,
 ) : Thread("mirror-decoder-warmup") {
 
@@ -31,11 +31,11 @@ class MirrorDecoderWarmup(
     }
 
     override fun run() {
-        if (!dumpFile.exists()) {
+        val data = dumpData()
+        if (data == null) {
             Timber.w("mirror decoder warmup skipped: no dump")
             return
         }
-        val data = dumpFile.readBytes()
         val nals = annexBNals(data)
         if (nals.size < 4) return
         var backoffMs = 30_000L
