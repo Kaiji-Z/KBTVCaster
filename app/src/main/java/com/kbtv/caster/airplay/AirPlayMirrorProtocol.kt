@@ -54,6 +54,8 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
         this.sink = sink
         try {
             val appContext = context.applicationContext
+            this.appContext = appContext
+            registerNetworkWatch(appContext)
             val keyFile = appContext.filesDir.resolve("airplay.pem").absolutePath
             // oboe's OpenSL ES backend (pre-AAudio devices, like the Android 6
             // field TV) cannot discover native rate/burst itself; hand it the
@@ -184,6 +186,13 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
     }
 
     override fun stop() {
+        networkCallback?.let { cb ->
+            appContext?.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+                ?.let { it as? android.net.ConnectivityManager }?.unregisterNetworkCallback(cb)
+        }
+        networkCallback = null
+        synchronized(restartLock) { restartPending?.let { restartHandler.removeCallbacks(it) } }
+        appContext = null
         warmup?.cancel()
         warmup = null
         registrations.forEach {
@@ -221,6 +230,59 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
     private var mirrorUiActive = false
 
     private var warmup: MirrorDecoderWarmup? = null
+
+    // Long-uptime killer (field 2026-10-28): every native socket binds to the
+    // network interface present at start; one wifi/router bounce renumbers it
+    // and mDNS answers ENODEV + NTP goes unreachable — the receiver turns
+    // invisible until reboot. Rebind the whole stack when a network appears.
+    private var appContext: android.content.Context? = null
+    private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
+    private val restartLock = Any()
+    private var restartPending: Runnable? = null
+    private var lastRestartElapsed = 0L
+
+    private fun registerNetworkWatch(context: android.content.Context) {
+        val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+            as? android.net.ConnectivityManager ?: return
+        val cb = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                TraceRecorder.log("mirror_network_change")
+                scheduleRestart(context)
+            }
+        }
+        networkCallback = cb
+        try {
+            cm.registerNetworkCallback(android.net.NetworkRequest.Builder().build(), cb)
+        } catch (e: Exception) {
+            Timber.w(e, "network watch register failed")
+        }
+    }
+
+    private fun scheduleRestart(context: android.content.Context) {
+        synchronized(restartLock) {
+            restartPending?.let { restartHandler.removeCallbacks(it) }
+            val r = Runnable { restartNative(context) }
+            restartPending = r
+            restartHandler.postDelayed(r, 5000)
+        }
+    }
+
+    private fun restartNative(context: android.content.Context) {
+        synchronized(restartLock) {
+            restartPending = null
+            val elapsed = android.os.SystemClock.elapsedRealtime()
+            if (elapsed - lastRestartElapsed < 30_000) return
+            lastRestartElapsed = elapsed
+        }
+        Timber.w("network changed — restarting AirPlay stack")
+        val sink = this.sink
+        try { stop() } catch (e: Exception) { Timber.w(e, "restart stop") }
+        try { start(context, sink ?: return) } catch (e: Exception) {
+            Timber.e(e, "restart start failed")
+        }
+    }
+
+    private val restartHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     override fun onVideoData(data: ByteArray, ntpTimeNs: Long, isH265: Boolean) {
         lastVideoNs = System.nanoTime()
