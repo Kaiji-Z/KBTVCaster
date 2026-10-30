@@ -59,7 +59,12 @@ class MirrorVideoRenderer {
     private var lastDecoderError: Exception? = null
 
     // render-side only (feeder thread)
-    private var renderedFrames = 0L
+    // volatile: written by the feeder thread, read cross-thread by tests
+    // (FlipStreamReproTest polls it; without volatile ARM caches it stale)
+    @Volatile private var renderedFrames = 0L
+
+    /** Test/trace read-only view of the decode-output counter. */
+    val renderedFrameCount: Long get() = renderedFrames
     private var droppedFrames = 0L
     private var h265Dropped = 0L
     private val latencyMicros = ArrayList<Long>()
@@ -758,10 +763,13 @@ class MirrorVideoRenderer {
         Timber.i("mirror stats: frames=$frames dropped=$droppedFrames p95=${p95 / 1000.0}ms")
     }
 
-    /** Debug capture of the raw incoming AU stream, capped at 8MB per session. */
+    /** Debug capture of the raw incoming AU stream, capped at 32MB per session. */
     private fun dumpAu(data: ByteArray) {
         val dir = debugDumpDir ?: return
-        if (dumpBytes > 8L * 1024 * 1024) return
+        // 32MB ≈ 2min live: the 8MB cap truncated every recording exactly
+        // before the fatal resolution switch (2026-10-30) — the incident
+        // bytes are what the flip repro needs
+        if (dumpBytes > 32L * 1024 * 1024) return
         try {
             if (dumpStream == null) {
                 dumpBytes = 0
