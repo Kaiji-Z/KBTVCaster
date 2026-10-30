@@ -773,7 +773,16 @@ class MirrorVideoRenderer {
         try {
             if (dumpStream == null) {
                 dumpBytes = 0
-                dumpStream = java.io.FileOutputStream(java.io.File(dir, "mirror-dump.h264"))
+                // rotate: a 1-frame recast once TRUNCATED the 4240-frame
+                // incident recording 19s after the incident (2026-10-30) —
+                // keep one previous generation instead of destroying evidence
+                val f = java.io.File(dir, "mirror-dump.h264")
+                if (f.exists()) {
+                    val prev = java.io.File(dir, "mirror-dump-prev.h264")
+                    prev.delete()
+                    f.renameTo(prev)
+                }
+                dumpStream = java.io.FileOutputStream(f)
             }
             dumpStream!!.write(data)
             dumpBytes += data.size
