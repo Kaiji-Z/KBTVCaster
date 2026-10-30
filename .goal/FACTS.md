@@ -44,4 +44,6 @@
 | F14 | /info **displays 数组**模板（width/height/rotation:false/widthPhysical:false/widthPixels/heightPixels/refreshRate 60/maxFPS %d）——与我方 vendored raop_handlers.h:215-234 同构 | liblelink.so plist 模板 0x450978 区 | 排除"displays 缺失"差异假设（双方都有） | ✅ 结案 |
 | F15 | 会话类型矩阵：ios5.0 airplay screen/audio、lelink screen/audio、itunes airplay audio、unknown airplay screen | liblelink.so 串（0x44be0b 区） | 会话语义对照背景 | ✅ |
 
+| F16 | **mirror_player create 调参旋钮全集**（运行时日志格式串直录）：strSessionId/nPlayerType/nAndroidVersion/**strCodecName**（按机型选解码器）/**nLowlatencyType**/**bResetHard**/**bSupportDropFrame**/**bFlushCache**/**bPtsUseMs**/**nSpsPpsUsage**（SPS/PPS 供给模式：csd 注入 vs 流内——与分辨率切换行为直接相关）/**nFirstFrameOptimizeType**/nProtocol/nVideoFramerateSet/nAudioSampleRateInHz/nFrameHandleType；另有 ProcessSetParameter 按类型分发（volume 等）、unsupported 显式拒绝；ScreenStream 会话生命周期（begin to run/exit per server fd） | liblelink.so 串（mirror_player/ScreenStream 区） | G4 调参对照表 + G1 切换语义（nSpsPpsUsage 待 Ghidra 取值） | ✅ 串级 |
+
 **乐播源文件地图**（`__FILE__` 全集）：common/libplist、common/libxml2、httpdserver/（lighttpd 系 11 文件）、sink/mirror_player/mediacodec_wrapper.c、sink/rtp_stream/{netutils,raop_buffer}.c、sink/sdp.c。
