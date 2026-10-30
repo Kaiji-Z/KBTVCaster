@@ -18,6 +18,7 @@ Exit 0 = answer mentions the name; 2 = no answer / name absent.
 """
 import argparse
 import socket
+import time
 import struct
 import sys
 
@@ -30,10 +31,20 @@ def query(name: bytes, timeout: float) -> bytes:
     pkt += b"\x00" + struct.pack(">HH", 12, 1)  # type PTR, class IN
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(timeout)
+    payloads = []
     try:
         sock.sendto(pkt, ("224.0.0.251", 5353))
-        data, _ = sock.recvfrom(4096)
-        return data
+        # several responders may answer the same query (this LAN also runs a
+        # bundled 乐播-based receiver): collect them all, first within timeout
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            sock.settimeout(max(0.1, deadline - time.time()))
+            try:
+                data, _ = sock.recvfrom(4096)
+                payloads.append(data)
+            except socket.timeout:
+                break
+        return b"\n".join(payloads)
     finally:
         sock.close()
 
