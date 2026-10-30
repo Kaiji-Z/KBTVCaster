@@ -34,4 +34,14 @@
 
 ## Phase 3 新提取（G1/G2/G4 进行中）
 
-（暂无——第 1 轮起在此追加）
+### Round 25（2026-10-31 深夜，strings 级，Ghidra 待深挖）
+
+| # | 事实 | 来源（~/rea-work，仓库外） | 我方落点 | 状态 |
+|---|---|---|---|---|
+| F11 | HPPlay 8.2.04 APK **只带 armeabi-v7a** 32 位库（lib 清单实证）；真电视以 32 位 ABI 跑 v7a liblelink.so | `~/rea-work/app.apk` lib/ 清单 | 分析对象选型：v7a 即真机实跑版本 | ✅ |
+| F12 | 乐播 AirPlay 栈 = **UxPlay/RAOP 族分支**：`./lelink/sink/rtp_stream/raop_buffer.c`（raop_buffer_queue/handle_resends/flush 同名 API）+ lighttpd 系 httpdserver（fdevent/request/response/server）+ libplist + 自研 ScreenStream/mirror_frame_store/mirror_mediacodec_wrapper | liblelink.so `__FILE__` 串全集 | G1 策略改为分支差异比对 | ✅ |
+| F13 | 解码器包装器：init 失败 **sleep 后重试**（"sleep, and will try init_decoder again"）；`use fixed resolution: %dx%d->%dx%d` 尺寸重映射；厂商解码器名表（OMX.allwinner.video.decoder.avc 等）；low-latency 键名 `low-latency`/`lowlatency` | liblelink.so 串邻域（init_decoder 函数区） | G2 重试策略 / G4 键名对照 | 待 Ghidra 深挖 |
+| F14 | /info **displays 数组**模板（width/height/rotation:false/widthPhysical:false/widthPixels/heightPixels/refreshRate 60/maxFPS %d）——与我方 vendored raop_handlers.h:215-234 同构 | liblelink.so plist 模板 0x450978 区 | 排除"displays 缺失"差异假设（双方都有） | ✅ 结案 |
+| F15 | 会话类型矩阵：ios5.0 airplay screen/audio、lelink screen/audio、itunes airplay audio、unknown airplay screen | liblelink.so 串（0x44be0b 区） | 会话语义对照背景 | ✅ |
+
+**乐播源文件地图**（`__FILE__` 全集）：common/libplist、common/libxml2、httpdserver/（lighttpd 系 11 文件）、sink/mirror_player/mediacodec_wrapper.c、sink/rtp_stream/{netutils,raop_buffer}.c、sink/sdp.c。
