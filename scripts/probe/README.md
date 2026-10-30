@@ -21,6 +21,10 @@ a physical sender; the hammer covers the protocol-stack health layer beneath
 it. mDNS name check is a raw substring match (no DNS decompression); the
 TXT features-bit assertion stays manual for now.
 
+**Discipline: NEVER run the hammer while someone is casting to the receiver.**
+The takeover probe deliberately evicts the live RAOP connection — running it
+against a receiver in use kills the user's session (incident 2026-10-30).
+
 Regression loop for any AirPlay-stack change:
 
 ```bash
