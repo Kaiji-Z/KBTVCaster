@@ -203,8 +203,12 @@ class MirrorVideoRenderer {
         }
         if (sps != null || pps != null) {
             synchronized(lock) {
-                if (sps != null && csd0 == null) csd0 = sps
-                if (pps != null && csd1 == null) csd1 = pps
+                // track the LATEST param sets: in-band resolution switches
+                // carry new SPS/PPS mid-session, and a codec recreate must
+                // configure with them (the old null-guard froze csd at the
+                // session's first resolution).
+                if (sps != null) csd0 = sps
+                if (pps != null) csd1 = pps
             }
         }
         dumpAu(data)
@@ -338,6 +342,11 @@ class MirrorVideoRenderer {
         }
     }
 
+    // serializes stream-format recreates off the feeder thread
+    private val streamFormatExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "mirror-format-recreate").apply { isDaemon = true }
+    }
+
     private var drainProbe = 0
     private var fedProbe = 0
     private var skippedBlits = 0L
@@ -365,8 +374,13 @@ class MirrorVideoRenderer {
                 oIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                     // In-band resolution switches (portrait home -> landscape
                     // video) surface here with the stream's true dimensions
-                    // from SPS: drive the letterbox from these, not from the
-                    // sender's flapping telemetry.
+                    // from SPS. The firmware's in-band switch (port flush +
+                    // buffer re-count) survives only a couple of switches per
+                    // decoder instance (field 2026-10-30: 3rd switch -> all
+                    // nBufferCountActual rejected -> output dead -> sender
+                    // gave up ~2s later). Recreate the decoder on every real
+                    // switch: setResolution tears down and rebuilds with the
+                    // fresh csd captured above.
                     try {
                         val fmt = codecRef.outputFormat
                         var fw = fmt.getInteger(MediaFormat.KEY_WIDTH)
@@ -375,11 +389,23 @@ class MirrorVideoRenderer {
                             fw = fmt.getInteger(MediaFormat.KEY_CROP_RIGHT) - fmt.getInteger(MediaFormat.KEY_CROP_LEFT) + 1
                             fh = fmt.getInteger(MediaFormat.KEY_CROP_BOTTOM) - fmt.getInteger(MediaFormat.KEY_CROP_TOP) + 1
                         }
-                        // mid-flip the MStar firmware reports degenerate crops
-                        // (e.g. 1x9): a tiny letterbox viewport renders pure
-                        // black at 60fps. Ignore implausible dims — the next
-                        // format change with real SPS dims will land.
-                        if (fw >= 64 && fh >= 64) glDisplay?.setDecodeBufferSize(fw, fh)
+                        if (fw >= 64 && fh >= 64) {
+                            if (fw != width || fh != height) {
+                                TraceRecorder.log("mirror_stream_format_change", "w" to fw, "h" to fh)
+                                // Off-feeder: setResolution joins the feeder
+                                // thread, which is US — run it elsewhere and
+                                // stop touching this codec instance now.
+                                streamFormatExecutor.execute {
+                                    try {
+                                        setResolution(fw, fh)
+                                    } catch (e: Exception) {
+                                        Timber.w(e, "format-change recreate")
+                                    }
+                                }
+                                return
+                            }
+                            glDisplay?.setDecodeBufferSize(fw, fh)
+                        }
                     } catch (e: Exception) {
                         Timber.w(e, "mirror output format dims")
                     }
