@@ -252,7 +252,17 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
         }
         networkCallback = cb
         try {
-            cm.registerNetworkCallback(android.net.NetworkRequest.Builder().build(), cb)
+            // restarts call start() from the mirror-restart thread; the 2-arg
+            // registerNetworkCallback (the only overload on API 23 — the
+            // 3-arg Handler version is API 26+) binds callbacks to the
+            // CALLER's looper, so register from main.
+            restartHandler.post {
+                try {
+                    cm.registerNetworkCallback(android.net.NetworkRequest.Builder().build(), cb)
+                } catch (e: Exception) {
+                    Timber.w(e, "network watch register failed")
+                }
+            }
         } catch (e: Exception) {
             Timber.w(e, "network watch register failed")
         }
@@ -275,14 +285,54 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
             lastRestartElapsed = elapsed
         }
         Timber.w("network changed — restarting AirPlay stack")
-        val sink = this.sink
-        try { stop() } catch (e: Exception) { Timber.w(e, "restart stop") }
-        try { start(context, sink ?: return) } catch (e: Exception) {
-            Timber.e(e, "restart start failed")
+        val sink = this.sink ?: return
+        restartInProgress = true
+        restartHandler.postDelayed({
+            if (restartInProgress) {
+                Timber.e("AirPlay stack restart timed out — escalating to process restart")
+                TraceRecorder.log("mirror_stack_restart_timeout")
+                scheduleProcessRestart(context)
+            }
+        }, 12_000)
+        restartExecutor.execute {
+            try { stop() } catch (e: Exception) { Timber.w(e, "restart stop") }
+            try { start(context, sink) } catch (e: Exception) {
+                Timber.e(e, "restart start failed")
+            }
+            restartInProgress = false
         }
     }
 
+    /** Last-resort recovery: wedged native threads can't be killed in-process. */
+    private fun scheduleProcessRestart(context: android.content.Context) {
+        try {
+            val intent = android.content.Intent(
+                context, com.kbtv.caster.service.CastCoordinatorService::class.java,
+            ).setAction(com.kbtv.caster.service.CastCoordinatorService.ACTION_START)
+            val pi = android.app.PendingIntent.getService(
+                context, 1001, intent, android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            val am = context.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
+            am.setExact(
+                android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                android.os.SystemClock.elapsedRealtime() + 3_000, pi,
+            )
+        } catch (e: Exception) {
+            Timber.w(e, "process restart alarm failed")
+        }
+        android.os.Process.killProcess(android.os.Process.myPid())
+    }
+
     private val restartHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    // stop() joins vendored native threads that can wedge forever on this
+    // firmware (field 2026-10-30: main thread died in futex inside stop(),
+    // stack half-torn, RTSP dead). Rebuilds run here — never on main — and a
+    // watchdog escalates to a full process restart when they hang.
+    private val restartExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "mirror-restart").apply { isDaemon = true }
+    }
+    @Volatile private var restartInProgress = false
 
     // Session-level callbacks arrive on NATIVE connection threads; heavy work
     // here (codec teardown, audio stop) blocked the httpd loop and wedged the
