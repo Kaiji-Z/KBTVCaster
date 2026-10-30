@@ -201,17 +201,18 @@ A feature is done if and only if ALL hold:
 - CLI/API command to trigger a workflow:
   None built-in. Real-world trigger is a UPnP control point sending SetAVTransportURI over SOAP → `DlnaProtocol.onPlay` (DlnaProtocol.kt:50-53). In-process, drive `CastProtocol.PlaybackSink.onCommand` directly (precedent: DlnaProtocolTest.kt:24-29). Needed for remediation: instrumented-test entry or control-point simulator script.
 - Command/API to fetch a trace:
-  none, needed. Current best: `adb logcat -d -s "DLNAUtils:*" "CastCoordinator:*" "Timber:*"` (README.md:119) — human-readable ring buffer only, not structured, not durable.
+  `adb shell run-as com.kbtv.caster cat files/trace/cast.jsonl` (TraceRecorder.kt:19, structured JSONL, persists across reboots — field-proven 2026-10-26/29 forensics). Live audio-engine counters: `NativeBridge.nativeServerAudioStats` (native_bridge.cpp:438-443). Protocol health: RTSP OPTIONS probe against port 7000 (verified ad-hoc this session; script not yet committed — gap #2).
 
-### 8.2 Test infra [auto-fill] — FINAL 2026-10-13 (Rounds 2–13)
+### 8.2 Test infra [auto-fill] — REFRESHED 2026-10-30 (Phase-2 field rounds)
 - Regression run command: `./gradlew test`（本机 wrapper 损坏，改用缓存 8.14.3 直调，见 .goal/SPEC.md §6）；三旗态：默认 / `-Pkbtv.flags.playbackPlan=true` / `-Pkbtv.flags.airplay=true`
-- Regression set directory: `app/src/test/java/com/kbtv/caster/` — 89 tests（0 失败 × 三旗，2026-10-13 A6 净室重写后复验）
-- Instrumented (TV AVD android-tv API 33): `app/src/androidTest/java/com/kbtv/caster/e2e/` — DlnaE2eTest（2，控制点 SOAP 链）+ AirPlayE2eTest（3，Assume 门控）+ MirrorDecodePathTest（1，900 帧 p95 探针）。默认旗 3 跑 3 跳过 / airplay 旗 6 全跑——双轮 0 失败（含 A6 重写后复验）
+- Regression set directory: `app/src/test/java/com/kbtv/caster/` — 90 tests @ `@Test` across 11 files (grep 2026-10-30；含 Phase-2 新增 TraceRecorderTest / AirPlayCommandMapperTest / AirPlayRequestTest / AirPlayServerTest)
+- Instrumented: `app/src/androidTest/java/com/kbtv/caster/e2e/` — 9 files (DlnaE2eTest, AirPlayE2eTest, MirrorDecodePathTest, MirrorRenderPathTest, MirrorRendererInProcessTest, DecoderAbTest, GlDisplayDrawTest, AudioPipelineProbeTest, TestMediaServer)。真机（SHARP Android 6）实测可跑：DecoderAbTest 控制实验 622/733 帧、AudioPipelineProbeTest sine+AAC 探针
 - Host-side control-point simulator: `app/src/androidTest/assets/controlpoint/dlna_control_point.py`（stdlib-only；trace 取 UDN+描述符路径 → /proc 端口枚举 + adb forward → 描述符 200 → SOAP SetAVTransportURI/Play（SOAPACTION 需双引号）→ trace 断言 play_started）
 - Assertion framework: JUnit 4.13.2 + mockito-core 5.8.0 + mockito-kotlin 5.2.1 + kotlinx-coroutines-test. Capturing-sink pattern established at DlnaProtocolTest.kt:24-29.
+- **缺失（gap #1/#3）**：会话回环压测（连接→拆→重连 N 轮 + RTSP 应答断言）不存在——2026-10-29 httpd 线程死亡类缺陷全靠用户真机暴露；host 侧 RTSP/mDNS 探针未入库（会话临时代码）
 
-### 8.3 Flag mechanism [auto-fill] — UPDATED 2026-10-13 (remediation Round 2)
-- Mechanism landed: `app/build.gradle.kts` reads Gradle property `-Pkbtv.flags.<name>=<bool>` into a generated `BuildConfig.FLAG_*` boolean (default false == pre-change behavior); runtime access via `com.kbtv.caster.service.protocol.FeatureFlags`. First flag: `kbtv.flags.playbackPlan` → `FLAG_PLAYBACK_PLAN_ROUTING` (PlaybackPlan routing vs legacy inline branch in `CastCoordinatorService.handlePlay`). Verified: same suite green under flag=off and flag=on (56/56, exit 0 both).
+### 8.3 Flag mechanism [auto-fill] — UPDATED 2026-10-30
+- Mechanism: `app/build.gradle.kts` reads Gradle property `-Pkbtv.flags.<name>=<bool>` into a generated `BuildConfig.FLAG_*` boolean (default false == pre-change behavior); runtime access via `com.kbtv.caster.service.protocol.FeatureFlags`. Flags in production: `kbtv.flags.playbackPlan` → `FLAG_PLAYBACK_PLAN_ROUTING`; `kbtv.flags.airplay` → `FLAG_AIRPLAY`（镜像协议注册门控，v0.3.0 起）. Build-only variant selector: `kbtv.build.abi`（单 ABI 快装，app/build.gradle.kts:27-29）。CI：android.yml master 推送双旗（off/on）矩阵，release.yml tag 驱动双 APK 签名发版（v0.3.0/v0.4.0 验证）。
 
 ### 8.4 Supervisor design [must-ask] — ANSWERED 2026-10-12
 > Developer answer (quoted): 「不需要，纯确定性断言（推荐）」
@@ -250,6 +251,28 @@ A feature is done if and only if ALL hold:
 | 8.4 | must-ask | ANSWERED (deterministic-only, no LLM judge) | developer 2026-10-12 |
 | 8.5 | must-ask | ANSWERED (draft confirmed, e2e items included) | developer 2026-10-12 |
 | 8.7 | auto-fill→must-ask | ANSWERED (JUnit; scope = emulator instrumented + DLNA control-point sim) | code scan + developer 2026-10-12 |
+| 8.1/8.2/8.3 | auto-fill | RE-AUDITED & REFRESHED (trace API now exists; 90 JVM + 9 instrumented files; 2 prod flags + CI matrix) | code scan 2026-10-30 (this diagnosis) |
+| 8.5 | must-ask | **PENDING** — Phase-2 镜像验收标准（≥300 帧 / p95<150ms / 断开重连）拟从会话 goal 冻结入册 + 新增回环锤验收项，待开发者一句话确认 | session goal (user-authored) + 2026-10-30 诊断提议 |
+
+## §10 DIAGNOSIS 2026-10-30 — ACI re-audit + gap list (Phase-2 field rounds)
+
+**ACI 判定**（对比 2026-10-12 基线）：
+- **2.1 无 UI 运行**：✅ 组件级达标 —— 服务 headless 启动（8.1 证据仍有效）；DLNA 链全程 headless（dlna_control_point.py）；AirPlay 组件级 headless（RTSP OPTIONS via adb forward、AudioPipelineProbeTest、DecoderAbTest、GlDisplayDrawTest）。△ **完整镜像会话仍需物理 iPhone**（FairPlay 配对无脚本驱动端）——架构边界，非本轮可修。
+- **2.2 状态记录**：✅ 达标（2026-10-12 为 △）—— TraceRecorder JSONL 持久化跨重启（TraceRecorder.kt:13-19,96；files/trace/cast.jsonl）；25 处 mirror_* trace 事件（grep 2026-10-30）；原生计数器 [kbtv] raop_rtp.c 4 处；音频引擎计数经 JNI 字符串（native_bridge.cpp:438-443）。
+- **2.3 程序化接口**：✅ 达标 —— trace 拉取命令、nativeServerAudioStats、RTSP/mDNS 探针均程序化（后两者脚本未入库，见 gap #2）。
+
+**Gap 列表**（P0 优先）：
+
+| # | 项 | 级别 | 根因证据 | 修复方案 |
+|---|---|---|---|---|
+| 1 | 会话回环压测缺失 | **P0** | 2026-10-29 httpd 线程死亡、网络重绑失效、栈重建必要性——全部先由用户真机暴露，后才溯源 | host 侧 Python 回环锤：adb forward 7000 → RTSP OPTIONS（断言 200 + <2s）→ 双连接接管探测 → 重复 N 轮；入库 scripts/probe/，真机/CI 皆可跑 |
+| 2 | 探针工具未入库 | **P0** | `grep -rln "OPTIONS \* RTSP" scripts/ app/src/androidTest/` → NOT COMMITTED（2026-10-30）；RTSP/mDNS/端口探针均为会话临时代码 | scripts/probe/ 固化：rtsp_health.py、mdns_query.py、reconnect_hammer.py（stdlib-only，同 dlna_control_point.py 模式，无新依赖） |
+| 3 | 真机验收断言未固化 | **P0** | 验收标准（≥300 帧/p95<150ms/重连）只存在于会话 goal，无机器可跑断言 | trace 断言脚本 assert_session.py：读 cast.jsonl，断言 session_end.frames≥300、p95Micros<150000、连续两场会话存在——iPhone 只出画面，判定归机器 |
+| 4 | 模拟器双旗 e2e 过期 | P1 | 上次全绿 2026-10-13；此后 MirrorRenderer/MirrorGlDisplay/原生栈经历 ~30 commits 未复验 | M5 回归轮：TV AVD 双旗 androidTest 全跑 |
+| 5 | GPLv3 合规文档欠账 | P1 | v0.4.0 已带 vendored UxPlay 外科补丁（[kbtv] 注释）发布，LICENSE-SWITCH.md 审计行/NOTICE 未增补 | 补 LICENSE-SWITCH.md 审计行 + NOTICE 致谢（goal 判据 7） |
+| 6 | 冷启动解码器解锁 | P1 | 2026-10-28 对照实验：M0 可投、我方探针 4 轮 cold；解锁动作在乐播原生库初始化序列 | clean-room 读反编译产物提取事实（用户既定 clean-room 规则） |
+| 7 | lint 阻塞门禁 | P2 | abortOnError=false（AGENTS.md 记载） | 可选：升阻塞 + CI 门禁 |
+| 8 | VDEC 异常释放泄漏根因 | P2 | streamId 泄漏签名（stored 0x4040）；已有栈重建+冷却探针兜底 | 深挖 MSTAR_VDEC_API stored/removal 不对称 |
 
 ### 8.7 Eval toolchain [auto-fill→must-ask] — FILLED 2026-10-12 ⚙️ orchestration item
 

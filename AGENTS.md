@@ -172,24 +172,25 @@ class FooTest {
 - **No Robolectric, no Espresso** — pure JVM unit tests only
 - **Test files:** `dlna/TransportStateTest.kt`, `control/MediaUriTest.kt`, `service/protocol/CastProtocolTest.kt`, `service/protocol/DlnaProtocolTest.kt`, `service/protocol/HlsDetectionTest.kt`
 
-## VERIFICATION STATUS（2026-10-12 诊断，详见 [VERIFICATION.md](VERIFICATION.md)）
+## VERIFICATION STATUS（2026-10-30 复审，详见 [VERIFICATION.md](VERIFICATION.md) §10）
 
-- **ACI 审计**：§2.1 无 UI 运行 ✗ 不达标（端到端 headless 断裂，androidTest 缺失）；§2.2 状态记录 △ 部分（logcat 可程序化读取，但非结构化、不持久）；§2.3 程序化接口 ✗ 不达标（无外部状态/trace 原生接口，仅进程内 LiveData）
-- **测试基建**：回归 `./gradlew test`（39 用例，JVM 纯逻辑）；断言 JUnit 4 + mockito-kotlin（捕获式 sink 模式，DlnaProtocolTest.kt:24-29）；无 supervisor（开发者裁定：纯确定性断言）；无 flag 机制（仅 BuildConfig.DEBUG 管日志）
-- **验收标准**：已冻结于 VERIFICATION.md §8.5（含端到端项）；§8.7 落地范围 = TV 模拟器 instrumented 测试 + DLNA 控制点模拟脚本（SOAP 经 `adb forward` 直连 Cling 端口，跳过 SSDP 组播）
+- **ACI 审计（2026-10-30）**：§2.1 无 UI 运行 ✅ 组件级达标（DLNA 全链 headless + AirPlay 组件级探针；完整镜像会话仍需物理 iPhone——FairPlay 配对无脚本驱动端，架构边界）；§2.2 状态记录 ✅ 达标（TraceRecorder JSONL 持久化跨重启 + 25 处 mirror_* 事件 + 原生 [kbtv] 计数器，2026-10-12 为 △）；§2.3 程序化接口 ✅ 达标（trace 拉取 / nativeServerAudioStats / RTSP·mDNS 探针）
+- **测试基建**：回归 `./gradlew test`（90 JVM 用例 × 三旗）；instrumented 9 文件（e2e：DLNA 控制点链、镜像解码路径、解码器 AB、GL 绘制、音频管线探针——真机实测可跑）；断言 JUnit 4 + mockito-kotlin；无 supervisor（开发者裁定 2026-10-12：纯确定性断言）；双生产 flag（airplay / playbackPlan）+ CI off/on 矩阵
+- **验收标准**：Phase-1 已冻结于 §8.5（2026-10-12）；Phase-2 镜像验收（≥300 帧 / p95<150ms / 断开重连）拟冻结 + 回环锤验收项——**待开发者确认（§8.6 PENDING 行）**
 
-**验证积压（按优先级）：**
+**验证积压（2026-10-30 复审，按优先级）：**
 
 | # | 项 | 级别 | 状态 |
 |---|---|---|---|
-| 1 | 建 androidTest + TV 模拟器，端到端驱动 PlaybackSink 断言 ExoPlayer 状态机 | P0 | 待修复（需开发者装 TV 系统镜像） |
-| 2 | 结构化运行记录（instrumentation 输出/文件），替代只靠 logcat 环形缓冲 | P0 | 待修复 |
-| 3 | 验收标准冻结 | P0 | ✅ 本轮已完成 |
-| 4 | flag 机制（Gradle 属性或 BuildConfig 字段，同套件 on/off 对比） | P1 | 待修复 |
-| 5 | 抽纯函数 PlaybackPlan(uri)→{sourceType, ua}，Service 只执行 | P1 | 待修复 |
-| 6 | LLM 裁判设计 | P1 | ✅ 裁定不需要（确定性断言） |
-| 7 | CI（.github/workflows 跑 test + lint） | P2 | ✅ 已落地（android.yml：test + assembleDebug，flag off/on 双跑；release.yml：tag→APK→GitHub Release） |
-| 8 | lint 升级为阻塞门禁 | P2 | 可选 |
+| 1 | 会话回环压测（连接→拆→重连 N 轮 + RTSP 应答断言）——2026-10-29 httpd 线程死亡类缺陷全靠用户真机暴露 | **P0** | 待修复 |
+| 2 | 探针工具入库（RTSP/mDNS/回环锤，scripts/probe/，stdlib-only） | **P0** | 待修复（现为会话临时代码） |
+| 3 | 真机验收断言固化（assert_session.py：cast.jsonl 断言 frames≥300 / p95<150ms / 连续会话） | **P0** | 待修复 |
+| 4 | 模拟器双旗 e2e 复验（上次全绿 2026-10-13，此后镜像层 ~30 commits 未复验） | P1 | 待修复（M5 回归轮） |
+| 5 | GPLv3 合规文档（vendored UxPlay 补丁的 LICENSE-SWITCH.md 审计行 + NOTICE；v0.4.0 已带补丁发布） | P1 | 待修复 |
+| 6 | 冷启动解码器解锁（乐播 init 序列 clean-room 提取） | P1 | 待修复（需真机对照） |
+| 7 | lint 升级为阻塞门禁 | P2 | 可选 |
+| 8 | VDEC 异常释放泄漏根因（已有栈重建+冷却探针兜底） | P2 | 可选 |
+| — | 历史项 1-7（androidTest 建立/结构化 trace/验收冻结/flag 机制/PlaybackPlan/LLM 裁定/CI） | — | ✅ 全部完成（2026-10-13~18 落地，详见 git log 与 VERIFICATION.md §8） |
 
 ## GIT
 
