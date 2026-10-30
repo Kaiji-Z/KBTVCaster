@@ -394,3 +394,18 @@ JVM 三旗全绿；airplay 旗 APK 已上电视（网络侧核验双绿）。**�
 - **已知瑕疵（不阻塞）**：API<24 双路注册时系统 mdnsd 与自研响应器抢名，mdnsd 侧改名 "KBTVCaster (2)"；空口实际由响应器以正名应答（探针证实）。待观察是否影响 iPhone 显示，必要时 API<24 跳过 NsdManager。
 - **回归**：模拟器全套 androidTest 7/7（hls 顺序调整后复跑）。
 - **待用户**：iPhone 控制中心「屏幕镜像」列表确认（判据 2 后半）；随后 M3 真机镜像实测（MainActivity 已在前台，SurfaceView 就绪）。
+
+---
+
+## Round 25（2026-10-31 深夜）—— Phase 3 R1：取证基座 + G1 首刀（SETUP 泄漏修复）【Phase 3 用量 1/25】
+
+- **取证基座（无需重建）**：乐播工作区全在 WSL `~/rea-work`（jadx 树 src/、v7a liblelink.so、patch/）+ `~/ghidra_12.1.4_PUBLIC` + REA（npm）。**事实 F11：APK 只带 armeabi-v7a 32 位库**（乐播 32 位打天下，与 issue #5 同世界观）——真电视跑的就是这份 v7a liblelink。
+- **G1 机制发现（FACTS F12-F15）**：
+  - F12 乐播 AirPlay 栈 = **UxPlay/RAOP 族分支**（`./lelink/sink/rtp_stream/raop_buffer.c`、raop_buffer_queue/handle_resends 同名 API）+ lighttpd 改的 httpdserver + 自研 ScreenStream/mirror_frame_store 管线 → G1 从黑盒逆向降级为**分支差异比对**
+  - F13 解码器包装器（mediacodec_wrapper.c）：init 失败**带 sleep 重试**（G2 线索）、`use fixed resolution: %dx%d->%dx%d` 尺寸重映射、厂商解码器名表（OMX.allwinner…）、low-latency 键（`low-latency`/`lowlatency`）
+  - F14 /info displays 数组模板（width/height/rotation/widthPixels/refreshRate 60/maxFPS）——**我方 vendored UxPlay 已有同构 displays**（raop_handlers.h:215-234）→ 排除"displays 缺失"假设
+  - F15 会话类型矩阵（ios5.0 airplay screen/audio、lelink screen/audio、itunes）
+- **我方缺陷发现+修复（本轮代码变更，唯一假设）**：raop_handlers.h SETUP 处理器**置空旧实例不销毁**——每场会话内每个视频起播的 SETUP 泄漏一套镜像 TCP 线程+NTP 轮询器，N 视频后 N 个端口同时向手机发 NTP。乐播 setup=startScreenStreamSession（stopPrevious 干净重启，F9）。修复：destroy-before-null（mirror→rtp→ntp 序，同 conn_destroy；[kbtv] 审计注释）。
+- **机器门（补丁构建，模拟器 dumpsys 验版本 0.4.1 后）**：JVM 三旗（默认/playbackPlan/airplay）EXIT=0 ✅；rtsp_health 25ms ✅；reconnect_hammer 5/5（恢复 5-36ms）✅。
+- **真机**：电视已随用户休眠（ping 半丢）——装机+G1 活体验证留早晨用户轮（快速连播切换 ≥5 次 + assert_session --since-hours 1）。
+- **Ghidra**：liblelink.so 无头分析已启动（~/rea-probe/liblelink-arm32），Round 2 用其 diff SET_PARAMETER 处理路径。
