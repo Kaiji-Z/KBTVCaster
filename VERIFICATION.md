@@ -265,14 +265,15 @@ A feature is done if and only if ALL hold:
 
 | # | 项 | 级别 | 根因证据 | 修复方案 |
 |---|---|---|---|---|
-| 1 | 会话回环压测缺失 | **P0** | 2026-10-29 httpd 线程死亡、网络重绑失效、栈重建必要性——全部先由用户真机暴露，后才溯源 | host 侧 Python 回环锤：adb forward 7000 → RTSP OPTIONS（断言 200 + <2s）→ 双连接接管探测 → 重复 N 轮；入库 scripts/probe/，真机/CI 皆可跑 |
-| 2 | 探针工具未入库 | **P0** | `grep -rln "OPTIONS \* RTSP" scripts/ app/src/androidTest/` → NOT COMMITTED（2026-10-30）；RTSP/mDNS/端口探针均为会话临时代码 | scripts/probe/ 固化：rtsp_health.py、mdns_query.py、reconnect_hammer.py（stdlib-only，同 dlna_control_point.py 模式，无新依赖） |
-| 3 | 真机验收断言未固化 | **P0** | 验收标准（≥300 帧/p95<150ms/重连）只存在于会话 goal，无机器可跑断言 | trace 断言脚本 assert_session.py：读 cast.jsonl，断言 session_end.frames≥300、p95Micros<150000、连续两场会话存在——iPhone 只出画面，判定归机器 |
-| 4 | 模拟器双旗 e2e 过期 | P1 | 上次全绿 2026-10-13；此后 MirrorRenderer/MirrorGlDisplay/原生栈经历 ~30 commits 未复验 | M5 回归轮：TV AVD 双旗 androidTest 全跑 |
-| 5 | GPLv3 合规文档欠账 | P1 | v0.4.0 已带 vendored UxPlay 外科补丁（[kbtv] 注释）发布，LICENSE-SWITCH.md 审计行/NOTICE 未增补 | 补 LICENSE-SWITCH.md 审计行 + NOTICE 致谢（goal 判据 7） |
-| 6 | 冷启动解码器解锁 | P1 | 2026-10-28 对照实验：M0 可投、我方探针 4 轮 cold；解锁动作在乐播原生库初始化序列 | clean-room 读反编译产物提取事实（用户既定 clean-room 规则） |
-| 7 | lint 阻塞门禁 | P2 | abortOnError=false（AGENTS.md 记载） | 可选：升阻塞 + CI 门禁 |
-| 8 | VDEC 异常释放泄漏根因 | P2 | streamId 泄漏签名（stored 0x4040）；已有栈重建+冷却探针兜底 | 深挖 MSTAR_VDEC_API stored/removal 不对称 |
+| 1 | 会话回环压测缺失 | **P0** | 2026-10-29 httpd 线程死亡、网络重绑失效、栈重建必要性——全部先由用户真机暴露，后才溯源 | ✅ 已落地（2026-10-30）：scripts/probe/ 四工具 + 真机锤 4/4 + 翻转复现器 FlipStreamReproTest（12 翻转全绿洗清渲染层） |
+| 2 | 探针工具未入库 | **P0** | grep 证伪（2026-10-30） | ✅ 已落地：rtsp_health / mdns_query / reconnect_hammer / assert_session + README 纪律（勿对使用中接收端上锤） |
+| 3 | 真机验收断言未固化 | **P0** | 验收标准只存在于会话 goal | ✅ 已落地：assert_session.py（frames≥300 / p95<150ms / 连续会话）；Phase-2 标准冻结仍待开发者确认（§8.6 PENDING） |
+| 4 | 模拟器双旗 e2e 过期 | P1 | 上次全绿 2026-10-13；此后 ~40 commits 未复验 | M5 回归轮：TV AVD 双旗 androidTest 全跑 |
+| 5 | GPLv3 合规文档欠账 | P1 | v0.4.0/v0.4.1 已带 vendored UxPlay 补丁发布 | 补 LICENSE-SWITCH.md 审计行 + NOTICE |
+| 6 | **iOS 发送端切换冻结（视频连播黑屏）** | **P1** | 2026-10-30 结案：接收端五信道逐层取证全无罪（渲染/RTSP/NTP/音频/对上游无差异）；M0 对照存活；乐播为自研镜像协议（TCP×3 + mirror_frame_store 帧仓库 + 秒级心跳 + stopPrevious 切换会话重建 + 音频丢帧模式，2026-10-30 M0 会话日志实证）；无 root 无法抓乐播 TCP 载荷 | **liblelink AirPlay 会话行为 clean-room 提取**（用户已批准排期，2026-10-30）：读反编译产物提取其对 iOS 的应答行为差异，写入我们的 raop 层；周级工程，按既定 clean-room 规则（乐播产物一行不进仓库） |
+| 7 | 冷启动解码器解锁 | P1 | 热身器合成流 4 轮 cold、真实流可用（2026-10-30 证明 cold 不拦真会话）；彻底解锁疑在乐播原生库 init 序列 | 并入 #6 的 clean-room 提取 |
+| 8 | lint 阻塞门禁 | P2 | abortOnError=false | 可选 |
+| 9 | VDEC 异常释放泄漏根因 | P2 | 已有栈重建+冷却探针兜底 | 可选 |
 
 ### 8.7 Eval toolchain [auto-fill→must-ask] — FILLED 2026-10-12 ⚙️ orchestration item
 
