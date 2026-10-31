@@ -241,13 +241,34 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
     private var restartPending: Runnable? = null
     private var lastRestartElapsed = 0L
 
+    // Networks already reported to us. registerNetworkCallback immediately
+    // replays every EXISTING network through onAvailable — treating that
+    // registration receipt as a change made every fresh process tear the
+    // stack down again ~5s after boot, and the TV's ConnectivityService
+    // re-registers duplicate agents at random moments too (2026-10-31:
+    // boot → false restart → restart-timeout churn ×3). Cling's router
+    // deduplicates the same noise ("No actual network change... ignoring").
+    private val networksSeen = java.util.Collections.synchronizedSet(HashSet<android.net.Network>())
+    private var watchRegisteredAtElapsed = 0L
+
     private fun registerNetworkWatch(context: android.content.Context) {
         val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
             as? android.net.ConnectivityManager ?: return
         val cb = object : android.net.ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: android.net.Network) {
                 TraceRecorder.log("mirror_network_change")
+                val firstSighting = networksSeen.add(network)
+                val inRegistrationGrace =
+                    android.os.SystemClock.elapsedRealtime() - watchRegisteredAtElapsed < 3_000
+                if (!firstSighting || inRegistrationGrace) {
+                    Timber.i("ignoring onAvailable for known network / registration grace")
+                    return
+                }
                 scheduleRestart(context)
+            }
+
+            override fun onLost(network: android.net.Network) {
+                networksSeen.remove(network)
             }
         }
         networkCallback = cb
@@ -259,6 +280,7 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
             restartHandler.post {
                 try {
                     cm.registerNetworkCallback(android.net.NetworkRequest.Builder().build(), cb)
+                    watchRegisteredAtElapsed = android.os.SystemClock.elapsedRealtime()
                 } catch (e: Exception) {
                     Timber.w(e, "network watch register failed")
                 }
