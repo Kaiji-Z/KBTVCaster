@@ -482,3 +482,11 @@ JVM 三旗全绿；airplay 旗 APK 已上电视（网络侧核验双绿）。**�
   - `c749c34` F21 活会话保护：wifi churn 新 network agent 每约 33s 杀栈一次（六连轮 session 3/6 即死于它→超时告警→服务重建）；现 idle 栈才响应该恢复钩子。
 - **环境事实**：电视 wifi churn 晚间高发；adbd TCP 可死于系统级压力（ping 通 5555 不通，现场重启治）；`[VDEC] Vdec Init Failed` = 解码器系统楔死判据（churn 累积，重启电视治）。gradle.org 当晚不可达——wrapper 8.7 缓存损坏时用本地已有 8.14.3 dist 克隆到 URL-hash 目录名可救急（gradle-wrapper.properties 改动**未提交**，勿入库）。
 - **欠账**：B/C 修复的六连轮复测被电视 adbd 失联打断（F21 guard 版已构建在 build 输出）；reconnect_hammer / assert_session 机器判据轮；之后才是一次用户四合一轮。
+
+### R31 附录：M5 模拟器双旗 e2e 复验（2026-10-31 深夜，积压 #4 关闭）
+
+- **注入器 --emulator 模式**（QEMU console redir）：adb forward 无法承载镜像数据口——adbd 设备侧连 `localhost` 优先解析 ::1，而 data socket 是 AF_INET 单栈（7000 能通纯因 httpd 双栈监听 ::）。console 需预置 auth token 文件再启动模拟器。
+- **dump 喂养闭环**：模拟器注入 15-20s 即产 mirror-dump.h264（588/590 帧 p95=86ms 零丢），e2e 里 7 个"connect a mirror session first"用例复活。connectedAndroidTest 结束会卸载清数据——每轮前重喂。
+- **双旗对称结果**：on 旗 18 用例 12 pass/2 skip/4 fail；off 旗 12 pass/5 skip/4 fail——**4 个失败两旗完全同组**，全部真机专属：注入 320 流 ≠ 真机 iPhone dump（pts-small/control-C 阈值按真机流定）、t1080-high.h264 真机资产、goldfish 解码器输出 YV12 vs 真机 NV12（GL 测试）。可模拟器化判据（canned 软解≥100帧 p95<150ms、DLNA 链、FlipStream、音频探针）双旗全绿。
+- 三旗 JVM：`./gradlew test` EXIT=0。
+- 电视 adbd 全程失联（ping 通 5555 拒，需现场重启）；真机资产 push 与 F21-guard 六连轮复测顺延至电视回归。
