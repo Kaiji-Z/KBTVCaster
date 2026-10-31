@@ -556,10 +556,39 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
 
     override fun onDacpId(dacpId: String, activeRemote: String) {}
 
+    // Generation guard for the queued teardown path: a mirror flip retires
+    // the old instance (false) and immediately starts the new one (true). The
+    // true path runs synchronously (below), so a queued false can dequeue
+    // AFTER the new session is live — it must then skip, or it tears down
+    // the live session (2026-10-31 regression: black screen on every cast).
+    private val mirrorRunGen = java.util.concurrent.atomic.AtomicLong(0)
+
     override fun onMirrorRunning(running: Boolean) {
+        // Light state flips stay synchronous (native calls this from the
+        // httpd thread at quiesce/start; it must never block there).
         mirrorFrames = 0
         mirrorUiActive = running
         if (running) startSessionWatchdog() else stopSessionWatchdog()
+        val gen = mirrorRunGen.incrementAndGet()
+        if (running) {
+            // Synchronous, exactly as pre-reaper: on this MStar/GL stack the
+            // codec start must interleave with the UI surface dance in the
+            // order it always had — moving it onto the executor broke surface
+            // mode (BufferQueue abandoned right after configure, buffer-mode
+            // fallback never renders on this TV) and nothing displayed.
+            runMirrorSession(true)
+        } else {
+            // Pure teardown is thread- and delay-tolerant; keeping it off the
+            // caller thread preserves the async-retire guarantee that the
+            // httpd thread never joins renderer workers.
+            callbackExecutor.execute {
+                if (gen != mirrorRunGen.get()) return@execute // superseded by a newer true
+                runMirrorSession(false)
+            }
+        }
+    }
+
+    private fun runMirrorSession(running: Boolean) {
         videoOut?.onSession(running)
         try {
             onMirrorSession?.invoke(running)

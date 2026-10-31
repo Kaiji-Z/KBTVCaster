@@ -909,23 +909,14 @@ raop_handler_setup(raop_conn_t *conn,
 
         /* [kbtv] upstream nulls these WITHOUT destroying: every re-SETUP
          * inside one connection (each video start in a mirror session)
-         * leaked the previous mirror TCP thread + NTP poller. After N
-         * videos, N timing pollers hit the phone from N different ports.
-         * LEBO restarts its ScreenStreamSession cleanly on setup
-         * ("stopPrevious", field 2026-10-30) — destroy before re-creating,
-         * same order as conn_destroy. */
-        if (conn->raop_rtp_mirror) {
-            raop_rtp_mirror_destroy(conn->raop_rtp_mirror);
-        }
-        if (conn->raop_rtp) {
-            raop_rtp_destroy(conn->raop_rtp);
-        }
-        if (conn->raop_ntp) {
-            raop_ntp_destroy(conn->raop_ntp);
-        }
-        conn->raop_ntp = NULL;
-        conn->raop_rtp = NULL;
-        conn->raop_rtp_mirror = NULL;
+         * leaked the previous mirror TCP thread + NTP poller. LEBO restarts
+         * its ScreenStreamSession cleanly on setup ("stopPrevious", field
+         * 2026-10-30). 2026-10-31 lesson: destroying synchronously HERE (on
+         * the single httpd thread) wedged the whole server when a worker
+         * stalled mid-callback — destroy asynchronously instead:
+         * raop_conn_retire_streams quiesces (ordered running=false), lifts
+         * the trio out of conn and reaps it on a background thread. */
+        raop_conn_retire_streams(conn);
         char remote[40] = { 0 };
         int len = utils_ipaddress_to_string(conn->remotelen, conn->remote, conn->zone_id, remote, (int) sizeof(remote));
         if (!len || len > (int) sizeof(remote)) {

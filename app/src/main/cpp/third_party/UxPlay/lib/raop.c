@@ -31,6 +31,7 @@
 #include "compat.h"
 #include "raop_rtp_mirror.h"
 #include "raop_ntp.h"
+#include "threads.h"
 
 
 /* libplist-2.3.0  API change */
@@ -124,6 +125,80 @@ struct raop_conn_s {
     bool have_active_remote;
 };
 typedef struct raop_conn_s raop_conn_t;
+
+/* [kbtv] retired-stream reaper (2026-10-31 field wedge). The destroy paths
+ * JOIN the mirror/audio/NTP worker threads, and the mirror worker can block
+ * for a long time inside its per-frame callback (renderer busy during a
+ * resolution flip). Every RTSP request — including SETUP's destroy-before-
+ * re-create on every video switch — runs on the single httpd thread, so a
+ * synchronous destroy wedges the whole server: it stops accepting,
+ * answering and delivering data until the app is force-stopped
+ * (2026-10-31: SETUP #10 of a switching storm; reproduced by
+ * scripts/probe/setup_storm.py). LEBO tears the outgoing stream down
+ * asynchronously instead ("stopPrevious" dying state, extracted
+ * 2026-10-30) — same design here: quiesce the mirror (cheap synchronous
+ * state flip + ordered running=false callback), lift the trio out of the
+ * connection, and let a detached reaper stop/join/free it. Callers never
+ * wait. Because the conn pointers are nulled before the reaper runs, the
+ * reaper is the trio's exclusive owner: no other path can double-destroy. */
+typedef struct raop_retired_s {
+    raop_rtp_mirror_t *raop_rtp_mirror;
+    raop_rtp_t *raop_rtp;
+    raop_ntp_t *raop_ntp;
+} raop_retired_t;
+
+static THREAD_RETVAL
+raop_retired_reaper(void *arg) {
+    raop_retired_t *retired = arg;
+    /* same order as the old synchronous destroy: mirror, audio, ntp */
+    if (retired->raop_rtp_mirror) {
+        raop_rtp_mirror_destroy(retired->raop_rtp_mirror);
+    }
+    if (retired->raop_rtp) {
+        raop_rtp_destroy(retired->raop_rtp);
+    }
+    if (retired->raop_ntp) {
+        raop_ntp_destroy(retired->raop_ntp);
+    }
+    free(retired);
+    return NULL;
+}
+
+static void
+raop_conn_retire_streams(raop_conn_t *conn) {
+    raop_retired_t *retired;
+    pthread_t reaper;
+    pthread_attr_t attr;
+
+    assert(conn);
+    if (!conn->raop_rtp_mirror && !conn->raop_rtp && !conn->raop_ntp) {
+        return;
+    }
+    /* deliver the mirror running=false callback now, in order, before the
+     * replacement instance can say true; suppress the worker's own late one */
+    if (conn->raop_rtp_mirror) {
+        raop_rtp_mirror_quiesce(conn->raop_rtp_mirror);
+    }
+    retired = calloc(1, sizeof(raop_retired_t));
+    assert(retired);
+    retired->raop_rtp_mirror = conn->raop_rtp_mirror;
+    retired->raop_rtp = conn->raop_rtp;
+    retired->raop_ntp = conn->raop_ntp;
+    conn->raop_rtp_mirror = NULL;
+    conn->raop_rtp = NULL;
+    conn->raop_ntp = NULL;
+
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    if (pthread_create(&reaper, &attr, raop_retired_reaper, retired)) {
+        /* spawn failed: keep the old pre-fix behaviour (leak, never block
+         * the httpd thread) rather than wait on the workers here */
+        logger_log(conn->raop->logger, LOGGER_ERR,
+                   "raop_conn_retire_streams: reaper spawn failed, leaking retired streams");
+        free(retired);
+    }
+    pthread_attr_destroy(&attr);
+}
 
 #include "raop_handlers.h"
 #include "http_handlers.h"
@@ -567,17 +642,10 @@ conn_destroy(void *ptr) {
         raop->callbacks.conn_destroy(raop->callbacks.cls);
     }
 
-    if (conn->raop_rtp) {
-        /* This is done in case TEARDOWN was not called */
-        raop_rtp_destroy(conn->raop_rtp);
-    }
-    if (conn->raop_rtp_mirror) {
-        /* This is done in case TEARDOWN was not called */
-        raop_rtp_mirror_destroy(conn->raop_rtp_mirror);
-    }
-    if (conn->raop_ntp) {
-        raop_ntp_destroy(conn->raop_ntp);
-    }
+    /* [kbtv] this cleanup runs on the httpd thread: destroy JOINs the same
+     * worker threads as SETUP's retire (see raop_conn_retire_streams) — a
+     * stuck mirror worker must not wedge the whole server here either. */
+    raop_conn_retire_streams(conn);
 
     if (raop->callbacks.video_flush) {
         raop->callbacks.video_flush(raop->callbacks.cls);
