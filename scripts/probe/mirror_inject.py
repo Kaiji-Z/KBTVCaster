@@ -28,6 +28,7 @@ Exit 0 = streamed; pair with assert_session.py for the verdict.
 import argparse
 import plistlib
 import socket
+import subprocess
 import struct
 import sys
 import time
@@ -248,6 +249,58 @@ def build_gops(nals):
     return gops
 
 
+def adb_forward(serial: str, local: int, remote: int, remove: bool = False) -> None:
+    """Map a dynamically-assigned receiver port through adb to localhost.
+    The mirror data port arrives in the SETUP response, so a static
+    `adb forward` cannot cover it; the injector registers it per session."""
+    verb = "forward --remove" if remove else "forward"
+    subprocess.run(
+        ["adb", "-s", serial, verb, f"tcp:{local}", f"tcp:{remote}"],
+        check=False, capture_output=True,
+    )
+
+
+def emu_redir(port: int, remove: bool = False, console: int = 5554) -> bool:
+    """QEMU-console redir for the dynamic mirror data port. adb forward is
+    NOT usable for it: adbd connects to `localhost` on the device, which
+    resolves to ::1 first, and the mirror data socket is AF_INET-only
+    (the RTSP httpd listens dual-stack, which is why port 7000 forwards
+    fine). The console needs the auth token file the emulator was started
+    with (preset it before booting — a fresh emulator writes its own)."""
+    import os
+    token_file = os.path.expanduser("~/.emulator_console_auth_token")
+    try:
+        tok = open(token_file).read().strip()
+    except OSError:
+        return False
+    cmd = (f"redir {'del' if remove else 'add'} tcp:{port}:{port}\n").encode()
+    try:
+        s = socket.create_connection(("127.0.0.1", console), timeout=5)
+        s.settimeout(3)
+        def drain():
+            out = b""
+            try:
+                while True:
+                    c = s.recv(4096)
+                    if not c:
+                        break
+                    out += c
+                    if b"OK" in out or b"KO" in out:
+                        break
+            except socket.timeout:
+                pass
+            return out
+        drain()
+        s.sendall(f"auth {tok}\n".encode())
+        drain()
+        s.sendall(cmd)
+        ok = b"OK" in drain()
+        s.close()
+        return ok
+    except OSError:
+        return False
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--host", default="192.168.0.24")
@@ -258,6 +311,12 @@ def main() -> int:
     ap.add_argument("--switch-every", type=float, default=0.0,
                     help="re-SETUP interval on the same connection (0=never)")
     ap.add_argument("--stop", action="store_true", help="TEARDOWN at the end")
+    ap.add_argument("--adb-serial", default=None,
+                    help="usb/tcp-serial device: inject through per-session adb "
+                         "forwards (host 127.0.0.1) — for emulators/usb targets")
+    ap.add_argument("--emulator", action="store_true",
+                    help="inject into a local emulator via QEMU-console redirs "
+                         "(host 127.0.0.1); --port is the local RTSP redir port")
     args = ap.parse_args()
 
     es = open(args.h264, "rb").read()
@@ -270,9 +329,13 @@ def main() -> int:
         return 1
     print(f"asset: {len(nals)} NALs (sps={len(sps)} pps={len(pps)} vcl={len(vcl)})")
 
+    if args.adb_serial:
+        adb_forward(args.adb_serial, args.port, 7000)
+
+    ctl_host = "127.0.0.1" if (args.adb_serial or args.emulator) else args.host
     ctl = socket.socket()
     ctl.settimeout(8.0)
-    ctl.connect((args.host, args.port))
+    ctl.connect((ctl_host, args.port))
     _, _ = rtsp(ctl, "OPTIONS", 1)
 
     body = setup_plist()
@@ -287,9 +350,21 @@ def main() -> int:
         return 1
     print(f"SETUP ok, mirror data port {data_port}")
 
+    connect_host, connect_port = args.host, data_port
+    if args.adb_serial:
+        # dynamic dataPort through an adb forward registered per session
+        adb_forward(args.adb_serial, data_port, data_port)
+        connect_port = data_port
+    elif args.emulator:
+        # dynamic dataPort through a QEMU-console redir (see emu_redir)
+        if not emu_redir(data_port):
+            print("FAIL emulator console redir for data port rejected")
+            return 1
+        connect_host = "127.0.0.1"
+
     stream = socket.socket()
     stream.settimeout(8.0)
-    stream.connect((args.host, data_port))
+    stream.connect((connect_host, connect_port))
 
     # initial format packet: SPS+PPS (unencrypted type 0x0100, length-prefixed),
     # then the first VCL — it MUST share the SPS/PPS timestamp or the receiver
@@ -348,6 +423,11 @@ def main() -> int:
             ctl.close()
         except OSError:
             pass
+        if args.adb_serial:
+            adb_forward(args.adb_serial, args.port, 7000, remove=True)
+            adb_forward(args.adb_serial, data_port, data_port, remove=True)
+        if args.emulator:
+            emu_redir(data_port, remove=True)
     print(f"sent {sent} VCL packets over {args.seconds:.0f}s")
     return 0
 
