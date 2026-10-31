@@ -271,6 +271,19 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
                     Timber.i("ignoring onAvailable for known network / registration grace")
                     return
                 }
+                // An ACTIVE mirror session is the strongest evidence the
+                // network path works. This TV's ConnectivityService spawns
+                // fresh network agents during wifi churn (2026-10-31 evening:
+                // a new agent every ~33s, each one restarting the stack, which
+                // amputated the live session and cascaded into a service
+                // rebuild via the restart-timeout alarm). Only an idle stack
+                // needs this callback as a recovery hook (standby wake, mDNS
+                // gone stale).
+                if (mirrorUiActive) {
+                    Timber.i("network agent churn during active mirror session — ignoring")
+                    TraceRecorder.log("mirror_network_change_ignored_active_session")
+                    return
+                }
                 scheduleRestart(context)
             }
 
