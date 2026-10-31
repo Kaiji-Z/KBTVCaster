@@ -62,3 +62,11 @@
 | F19 | **同步销毁楔死类**：UxPlay httpd=单线程 select 循环（accept+所有连接读写+全部 RTSP 处理器）；任何 handler 内的 THREAD_JOIN 都可能冻结整栈。镜像工作线程可能在逐帧回调内长时间阻塞（渲染器忙于分辨率翻转） | setup_storm 补丁前 SETUP#2 卡 12s+，用户真机 09:57 后彻底投不上（force-stop 才恢复） | c9f834d 异步 reaper；风暴锤入库为该类缺陷的常驻回归 | ✅ 已修+复验 |
 | F20 | 乐播 stopPrevious 的 dying 语义价值：控制路径零等待——与我方 reaper 设计互证（异步拆旧、立即建新） | F9 运行时日志 + 本轮修复对照 | 已落地 | ✅ |
 | F21 | 栈重启超时→进程自杀升级链 + 启动期网络看门狗误报：churn 场景自愈机制本身脆弱（0.4.0 已有） | 10:33-10:34 三次连环：restart timeout ×2 → process restart ×2；新进程 5s 后 watchdog 误报 | Round 28 候选：重启路径审计 + 看门狗去抖（排除 ConnectivityService 重复 agent 噪音）+ NTP EINVAL 熔断 | 待修 |
+
+### Round 29（2026-10-31 午后，Ghidra+jadx 深挖——用户离开期间自主轮）
+
+| # | 事实 | 来源（~/rea-work / ~/rea-probe/ghidra_proj） | 我方落点 | 状态 |
+|---|---|---|---|---|
+| F22 | **乐播 UX=播放器先行**：点投屏先弹 PlayerView+loading（表面/缓冲就绪）再落流；会话由播放器层管理 | 用户观察 + hpplay-java PlayController/PlayerView 日志 | R28 已修同根问题（表面赛跑）；方向=连接中状态（产品化待办） | ✅ 定性 |
+| F23 | **G4 调参表（本机 SHARP/MStar/API23 全默认）**：nLowlatencyType=0、bResetHard=1、bSupportDropFrame=1、bFlushCache=0、nSpsPpsUsage=0（仅 amlogic<24 给 1）、nFirstFrameOptimizeType=3；旋钮全部支持云端按设备覆写（PlayerConfigBean mpu/md/mr/mffo/mfc）；"sharp" 仅是常量表成员，无任何特殊分支 | jadx `com/hpplay/sdk/sink/a/f.java`（650 行机型矩阵）+ `MirrorPlayer.java` objArr[13] 构造 | **本机无旋钮差可移植**——乐播优势全在会话生命周期与播放器先行，非调参。G4 提取结案 | ✅ |
+| F24 | 乐播 init_decoder 失败重试：等待 500ms×25 轮（≈12.5s 上限，轮询取消旗标）后**再试一次**；mirror_player create 为 Java→原生桥，15 参数由 Java 层传入（参数索引→字段映射已解：[0x12]=playerType…[0x1f]/[0x2e]=全局 getter=bPtsUseMs/音频采样率） | Ghidra FUN_00249000（create）/ FUN_00252e80（init retry）反编译 | 我方 warmup 退避（1/30/60/120/240s）比它更耐心；G2 真解药=R28 表面赛跑修复，非重试节奏 | ✅ 记录 |
