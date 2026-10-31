@@ -76,6 +76,13 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
                 TraceRecorder.log("mirror_start_failed", "stage" to "init")
                 return
             }
+            // [kbtv] headless-injector builds (-Pkbtv.flags.injector=true) pass
+            // undecrypted H.264 through: the synthetic sender cannot run the
+            // FairPlay handshake. Debug builds only — never set in release.
+            if (com.kbtv.caster.BuildConfig.FLAG_INJECTOR_BYPASS) {
+                NativeBridge.nativeSetMirrorPlaintext(true)
+                TraceRecorder.log("mirror_injector_bypass", "enabled" to true)
+            }
             val dm = appContext.resources.displayMetrics
             NativeBridge.nativeSetDisplaySize(handle, dm.widthPixels, dm.heightPixels, MAX_FPS)
             // (alac, aac): audio codec advertisement. Both on — mirrors the

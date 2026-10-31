@@ -91,7 +91,19 @@ mirror_buffer_init(logger_t *logger, const unsigned char *aeskey)
     return mirror_buffer;
 }
 
+/* [kbtv] debug-only plaintext mirror bypass for the headless injector
+ * (scripts/probe/mirror_inject.py): a synthetic sender cannot run the
+ * FairPlay handshake, so it streams raw H.264 and the receiver passes it
+ * through undecrypted. Enabled via JNI only from flag-gated debug builds;
+ * release builds never set it. */
+int kbtv_mirror_plaintext = 0;
+
 void mirror_buffer_decrypt(mirror_buffer_t *mirror_buffer, unsigned char* input, unsigned char* output, int inputLen) {
+    if (kbtv_mirror_plaintext) {
+        memcpy(output, input, inputLen);
+        mirror_buffer->nextDecryptCount = 0;
+        return;
+    }
     // Start decrypting
     if (mirror_buffer->nextDecryptCount > 0) {//mirror_buffer->nextDecryptCount = 10
         for (int i = 0; i < mirror_buffer->nextDecryptCount; i++) {

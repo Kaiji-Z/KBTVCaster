@@ -79,6 +79,27 @@ Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeInit(
     raop_set_log_level(ctx->raop, LOGGER_INFO);
     raop_set_log_callback(ctx->raop, _log_callback, NULL);
 
+    /* [kbtv] diagnostics: echo 7 > files/raoplog (via run-as) raises the
+     * vendored RAOP logger to DEBUG (7) / DEBUG_DATA (8) for a probing
+     * session — AFTER the INFO default above so it wins. Read once at init. */
+    {
+        char path[128];
+        snprintf(path, sizeof(path), "%s/raoplog",
+                 "/data/data/com.kbtv.caster/files");
+        FILE *f = fopen(path, "r");
+        if (f) {
+            char buf[8] = {0};
+            if (fgets(buf, sizeof(buf), f)) {
+                int lvl = atoi(buf);
+                if (lvl >= 1 && lvl <= 8) {
+                    raop_set_log_level(ctx->raop, lvl);
+                    LOGI("raop log level set to %d from files/raoplog", lvl);
+                }
+            }
+            fclose(f);
+        }
+    }
+
     const char *keyfile_c = env->GetStringUTFChars(keyFile, NULL);
     const char *name_c = env->GetStringUTFChars(name, NULL);
 
@@ -456,4 +477,14 @@ Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeServerAudioDebug(
     jlong cap = env->GetDirectBufferCapacity(buf);
     if (!addr || cap <= 0) return JNI_FALSE;
     return audio_engine_get_debug(ctx->cb_ctx.audio_engine, addr, (size_t)cap) ? JNI_TRUE : JNI_FALSE;
+}
+
+/* [kbtv] debug-only: headless injector bypass (see mirror_buffer.c) */
+extern "C" int kbtv_mirror_plaintext;
+extern "C"
+JNIEXPORT void JNICALL
+Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeSetMirrorPlaintext(
+        JNIEnv *env, jobject thiz, jboolean enabled) {
+    kbtv_mirror_plaintext = enabled ? 1 : 0;
+    LOGI("mirror plaintext bypass %s", enabled ? "ON (debug injector)" : "off");
 }
