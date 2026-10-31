@@ -47,3 +47,18 @@
 | F16 | **mirror_player create 调参旋钮全集**（运行时日志格式串直录）：strSessionId/nPlayerType/nAndroidVersion/**strCodecName**（按机型选解码器）/**nLowlatencyType**/**bResetHard**/**bSupportDropFrame**/**bFlushCache**/**bPtsUseMs**/**nSpsPpsUsage**（SPS/PPS 供给模式：csd 注入 vs 流内——与分辨率切换行为直接相关）/**nFirstFrameOptimizeType**/nProtocol/nVideoFramerateSet/nAudioSampleRateInHz/nFrameHandleType；另有 ProcessSetParameter 按类型分发（volume 等）、unsupported 显式拒绝；ScreenStream 会话生命周期（begin to run/exit per server fd） | liblelink.so 串（mirror_player/ScreenStream 区） | G4 调参对照表 + G1 切换语义（nSpsPpsUsage 待 Ghidra 取值） | ✅ 串级 |
 
 **乐播源文件地图**（`__FILE__` 全集）：common/libplist、common/libxml2、httpdserver/（lighttpd 系 11 文件）、sink/mirror_player/mediacodec_wrapper.c、sink/rtp_stream/{netutils,raop_buffer}.c、sink/sdp.c。
+
+### Round 26（2026-10-31 早晨，真机用户轮运行时观察）
+
+| # | 事实 | 观察 | 我方落点 | 状态 |
+|---|---|---|---|---|
+| F17 | **发送端内容保护的镜像签名**：受保护视频 → 视频帧持续到达但内容黑 + 音频全变 no-data 空标记包（datapkts 涨、real 冻结、decodeErr=0）；退出播放器镜像恢复可见；反复进出后发送端整体停发（idle_timeout） | 会话 faeb830d：真音频仅首个视频 3111 包（15s），09:56:08 起 real 冻结；用户证词与计数器逐点互证；接收端渲染 skip=0 无 crop 命中 | 非接收端缺陷；用户引导走 App 推送通道（Phase 1 判据 6 已证）。乐播对照待确认是否走推送 | ◐ 待 App 名/入口确认 |
+| F18 | **0.4.1 SETUP 泄漏修复真机生效**：95s 会话内 10 次分辨率翻转（≥9 次视频切换），解码器 1 次创建 0 重启，会话存活至用户停止；对照 10-30 每翻即重启/冻结 | mirror_session_end frames=3020 dropped=0 p95=147.8ms | 已落地（60c8581） | ✅ 真机 |
+
+### Round 27（2026-10-31 上午，风暴锤运行时观察）
+
+| # | 事实 | 观察 | 我方落点 | 状态 |
+|---|---|---|---|---|
+| F19 | **同步销毁楔死类**：UxPlay httpd=单线程 select 循环（accept+所有连接读写+全部 RTSP 处理器）；任何 handler 内的 THREAD_JOIN 都可能冻结整栈。镜像工作线程可能在逐帧回调内长时间阻塞（渲染器忙于分辨率翻转） | setup_storm 补丁前 SETUP#2 卡 12s+，用户真机 09:57 后彻底投不上（force-stop 才恢复） | c9f834d 异步 reaper；风暴锤入库为该类缺陷的常驻回归 | ✅ 已修+复验 |
+| F20 | 乐播 stopPrevious 的 dying 语义价值：控制路径零等待——与我方 reaper 设计互证（异步拆旧、立即建新） | F9 运行时日志 + 本轮修复对照 | 已落地 | ✅ |
+| F21 | 栈重启超时→进程自杀升级链 + 启动期网络看门狗误报：churn 场景自愈机制本身脆弱（0.4.0 已有） | 10:33-10:34 三次连环：restart timeout ×2 → process restart ×2；新进程 5s 后 watchdog 误报 | Round 28 候选：重启路径审计 + 看门狗去抖（排除 ConnectivityService 重复 agent 噪音）+ NTP EINVAL 熔断 | 待修 |

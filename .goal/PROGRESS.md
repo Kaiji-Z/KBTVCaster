@@ -409,3 +409,25 @@ JVM 三旗全绿；airplay 旗 APK 已上电视（网络侧核验双绿）。**�
 - **机器门（补丁构建，模拟器 dumpsys 验版本 0.4.1 后）**：JVM 三旗（默认/playbackPlan/airplay）EXIT=0 ✅；rtsp_health 25ms ✅；reconnect_hammer 5/5（恢复 5-36ms）✅。
 - **真机**：电视已随用户休眠（ping 半丢）——装机+G1 活体验证留早晨用户轮（快速连播切换 ≥5 次 + assert_session --since-hours 1）。
 - **Ghidra**：liblelink.so 无头分析已启动（~/rea-probe/liblelink-arm32），Round 2 用其 diff SET_PARAMETER 处理路径。
+
+---
+
+## Round 26（2026-10-31 早晨）—— 0.4.1 装机 + G1/G2 用户轮：会话扛住 9 次切换；音频/黑屏定性为发送端内容保护【Phase 3 用量 2/25】
+
+- **装机**：v7a 单 ABI 构建（`-Pkbtv.build.abi=armeabi-v7a -Pkbtv.flags.airplay=true`）安装成功，dumpsys 验 0.4.1 / lastUpdateTime=10-31 09:47:48。mDNS PASS + RTSP :7000 200 OK 25ms。
+- **G2（机器侧 ✅）**：电视断电重启后（uptime ≈7h）不经 M0 预热，首次真实会话直接出画面。warmup 全程报 cold（attempt 1-5，含会话前 4 秒）——再证「合成流拒用 ≠ 真流失败」。09:49:28 有 21ms 试探连接（video_flush 即断，疑 iOS 枚举）。
+- **G1（核心 ✅，字面差一个会话）**：单会话 faeb830d 09:55:41→09:57:16（95s）：**3020 帧 dropped=0 p95=147.8ms**；10 次分辨率翻转（500↔1920）=用户连播切换 **≥9 次**，会话存活到底（结束= idle_timeout，用户停止/iOS 停发）；**解码器全程 1 次创建 0 重启**（10-30 翻转即重启的对照）。skip=0、无 crop/degenerate 命中、GL 全程绘制。assert_session 1/2——min-sessions=2 需第二个会话（重连证明），用户轮补投未完成。
+- **G5 真凶定位（接收端音频管线无罪）**：首个视频真音频 3111 包（15s，decodeErr=0 xrun=0）；09:56:08 起 `real` 冻结、后续到达全为 no-data 空标记包（datapkts 持续涨=链路活）。**发送端停止音频采集**。
+- **黑屏定性（用户证词+日志互证）**：横屏视频黑屏但流不停、退出播放器镜像恢复可见、后续视频均黑、最终断连（idle_timeout=发送端停发）。接收端渲染健康（上列证据）→ 指向 **iOS DRM 采集排除**（黑帧+空音频包是同一机制的两面）。推论：乐播镜像同墙；乐播「好好的」应为 App 内投屏按钮走推送通道（视频流直推不经采集）。待确认：App 名 + 用户投屏入口 + 乐播对照入口。
+- **R2 备料**：Ghidra headless 实际未跑成（昨夜记录有误，仅 .so 拷贝）——已重启（~/rea-probe/ghidra_proj，log: ~/rea-probe/ghidra_analyze.log）。
+
+---
+
+## Round 27（2026-10-31 上午）—— G1 用户轮判定 + 回环锤暴露同步销毁楔死 + 异步 reaper 修复【Phase 3 用量 3/25】
+
+- **G1 用户轮结果**：单会话 95s 扛住 ≥9 次切换（详见 R26 记录前的现场：3020 帧 dropped=0 p95=147.8ms，解码器 0 重启）；**字面差第二个会话**（assert_session min-sessions=2，用户补投未完成——被「投不上」打断，见下）。
+- **新缺陷（P0 级，本轮主假设）**：0.4.1 的 SETUP 同步销毁在**单线程 httpd** 上 JOIN 三个工作线程；镜像线程卡在回调内时整个 RTSP 服务楔死（不 accept/不应答/数据停流）。用户真机暴露（09:57 切换风暴后「投不上」），`scripts/probe/setup_storm.py` 1 分钟复现（补丁前 SETUP#2 即卡 12s+）。
+- **修复（c9f834d）**：乐播 stopPrevious=异步 dying 语义的移植——`raop_conn_retire_streams()` 同步静默（quiesce 保序回调 false + 抑制旧线程迟到回调）→ 三件套摘指针 → detached reaper 收尸；`stop()` 守卫改 joined-only（修 quiesce 后 free 的 UAF 面）；Kotlin `onMirrorRunning` 轻重分离（重活过 callbackExecutor 串行，false→true 提交序=执行序）。
+- **机器门**：风暴锤 **30/30 SETUP 秒回** + 同连接金丝雀全绿 + 收线后 3ms（补丁前同模式卡死）；重连锤 5/5（恢复 4-13ms，接管路径复验）；三旗 JVM BUILD SUCCESSFUL。风暴期间 30 组 false→true 全保序（logcat 逐条验证）。
+- **暴露未修（Round 28 候选，0.4.0 时代已存在——09:38 就有 mirror_stack_restart_timeout）**：① 栈重启 12s 超时→进程自杀重启的升级链在churn下误触发；② 网络看门狗在进程启动 ~5s 后被电视 ConnectivityService 重复 agent 注册噪音误报「network changed」；③ NTP 线程对无效 rport 每 3s EINVAL 重试不止。
+- **锤的自坑两则（记档）**：plist 带 type 103 会被处理器拒收断连（伪装成楔死）；健康探针带 CSeq 会触发 nohold 驱逐自己的风暴连接——改用同连接 OPTIONS 金丝雀。
