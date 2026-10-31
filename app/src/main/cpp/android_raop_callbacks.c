@@ -7,6 +7,7 @@
 #include <string.h>
 #include <time.h>
 #include <errno.h>
+#include <pthread.h>
 #include <android/log.h>
 #include "android_raop_callbacks.h"
 #include "audio_engine.h"
@@ -15,11 +16,31 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
+/* [kbtv] attach/detach symmetry for native callback threads. Threads running
+ * RAOP callbacks (mirror data, NTP, retired-stream reapers) attach lazily in
+ * _get_env; on this Android 6 ART a still-attached thread that exits aborts
+ * the whole process ("Native thread exited without calling
+ * DetachCurrentThread" — 2026-10-31 injector round, retired mirror thread).
+ * A pthread key destructor detaches automatically at thread exit. */
+static pthread_key_t g_jni_detach_key;
+static pthread_once_t g_jni_detach_once = PTHREAD_ONCE_INIT;
+
+static void _jni_thread_detach(void *value) {
+    JavaVM *jvm = (JavaVM *) value;
+    if (jvm) (*jvm)->DetachCurrentThread(jvm);
+}
+
+static void _jni_detach_key_create(void) {
+    pthread_key_create(&g_jni_detach_key, _jni_thread_detach);
+}
+
 static JNIEnv *_get_env(android_callback_ctx_t *ctx) {
     JNIEnv *env = NULL;
     int status = (*ctx->jvm)->GetEnv(ctx->jvm, (void **)&env, JNI_VERSION_1_6);
     if (status == JNI_EDETACHED) {
         (*ctx->jvm)->AttachCurrentThread(ctx->jvm, &env, NULL);
+        pthread_once(&g_jni_detach_once, _jni_detach_key_create);
+        pthread_setspecific(g_jni_detach_key, (void *) ctx->jvm);
     }
     /* Clear any pending exception from a previous callback on this thread,
        otherwise JNI calls like NewByteArray will fatally abort. */
