@@ -490,3 +490,13 @@ JVM 三旗全绿；airplay 旗 APK 已上电视（网络侧核验双绿）。**�
 - **双旗对称结果**：on 旗 18 用例 12 pass/2 skip/4 fail；off 旗 12 pass/5 skip/4 fail——**4 个失败两旗完全同组**，全部真机专属：注入 320 流 ≠ 真机 iPhone dump（pts-small/control-C 阈值按真机流定）、t1080-high.h264 真机资产、goldfish 解码器输出 YV12 vs 真机 NV12（GL 测试）。可模拟器化判据（canned 软解≥100帧 p95<150ms、DLNA 链、FlipStream、音频探针）双旗全绿。
 - 三旗 JVM：`./gradlew test` EXIT=0。
 - 电视 adbd 全程失联（ping 通 5555 拒，需现场重启）；真机资产 push 与 F21-guard 六连轮复测顺延至电视回归。
+
+---
+
+## Round 32（2026-11-01 凌晨）—— 5 秒重建炸弹拆除：G1 机器门全绿【Phase 3 用量 8/25】
+
+- **昨夜归因纠错**：六连轮 session 4 之死不是 wifi churn——`onConnectionDestroy` 对**每次正常断开**都排 5s 全栈重建（10-29 httpd 楔死修复的过度覆盖），快速切换时炸弹落在下一个会话中途；restartNative 的固定日志文案 "network changed" 把两次归因都带偏了。
+- **修复**：onMirrorRunning(true) 先解除 pending 重建（新会话能开始=栈活着；真楔死时新会话起不来、重建照常兜底）。F21 活会话保护（c749c34）继续有效但只是第二道防线。
+- **机器门三绿（正式判据，v7a 真机）**：①六连轮（12s+1s 间隔）每轮完整 353 帧 p95 6-7ms 零中断；②reconnect_hammer **5/5 PASS**（recovery 3-6ms）；③assert_session --since-hours 1 **RESULT PASS**（11 OK/12，唯一 LOW=装机后首轮 299 帧）。
+- **装机**：用户轮前已换 airplay-only 正式包（injector 明文旁路包不能用于真 iPhone 流）。
+- **待用户四合一轮**：G2 直投（自动唤起）/ G1 切视频 5+ 次 / 停止后重连 / G5 听声音。
