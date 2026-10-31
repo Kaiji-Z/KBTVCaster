@@ -441,3 +441,12 @@ JVM 三旗全绿；airplay 旗 APK 已上电视（网络侧核验双绿）。**�
 - **v2 真机仍黑屏**（用户 11:1x 尝试）。两版 reaper 均在机器门全绿下破坏真实投屏——合成门对 codec/surface 交错是盲的。
 - **用户拍板回滚**：「早晨轮判定那个就是正常的，只有几个小问题」。7e97a65 将五个文件还原至 a76ba5d（= 早晨 3020 帧会话的确切代码），已装机验证（RTSP 200/mDNS PASS）。
 - **状态**：接收端回到早晨已知好状态。遗留开放缺陷（均已在案）：① 密集切换后 httpd 楔死（setup_storm 可复现类）；② F21 重启链。**下次触碰会话销毁路径前，必须先在真机拿到 v2 黑屏的完整日志归因（11:01 会话只有 9 连启+abandoned 队列证据，v2 失败现场未取证——不要再盲改。）
+
+---
+
+## Round 28（2026-10-31 午间）—— 双修复合体：过期错误守卫 + 换面重置降级 + reaper 回落【Phase 3 用量 4/25】
+
+- **11:27 取证（回滚代码上）锁死黑屏根因**：自动唤起 Activity 的 SurfaceView 在会话中途就位 → setSurface 主动退役 codec → feeder 迟到异常被 handleCodecError 误计 starve ×2 → createDecoder（starves!=0 分支）整场钉死 bufferMode（本机从不产画面）。早晨能用的真相=Activity 已在前台 7 分钟（装机时 am start），surface 先于流存在。
+- **修复**：①handleCodecError(failedCodec) 过期实例守卫（主动拆装不再计饿死）；②setSurface 换面时 surfaceModeStarves=0（新面无旧账）。同时 revert 回滚（reaper v2 回落——其真机失败发生在解码器楔死纪元，从未在健康解码器上被测过）。
+- **机器门**：三旗 JVM ✅；风暴 15/15 + 金丝雀 + 收线 3ms ✅；锤 3/3（4-13ms，风暴尾探针撞 F21 重启窗后收敛复跑）✅。
+- **待用户一轮四合一**：不开 App 直接投（自动唤起+表面赛跑=真 G2）→ 切视频数次（reaper+G1）→ 停止重连（楔死+G1 字面第二会话）→ 听声音（G5）。
