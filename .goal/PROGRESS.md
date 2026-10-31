@@ -431,3 +431,8 @@ JVM 三旗全绿；airplay 旗 APK 已上电视（网络侧核验双绿）。**�
 - **机器门**：风暴锤 **30/30 SETUP 秒回** + 同连接金丝雀全绿 + 收线后 3ms（补丁前同模式卡死）；重连锤 5/5（恢复 4-13ms，接管路径复验）；三旗 JVM BUILD SUCCESSFUL。风暴期间 30 组 false→true 全保序（logcat 逐条验证）。
 - **暴露未修（Round 28 候选，0.4.0 时代已存在——09:38 就有 mirror_stack_restart_timeout）**：① 栈重启 12s 超时→进程自杀重启的升级链在churn下误触发；② 网络看门狗在进程启动 ~5s 后被电视 ConnectivityService 重复 agent 注册噪音误报「network changed」；③ NTP 线程对无效 rport 每 3s EINVAL 重试不止。
 - **锤的自坑两则（记档）**：plist 带 type 103 会被处理器拒收断连（伪装成楔死）；健康探针带 CSeq 会触发 nohold 驱逐自己的风暴连接——改用同连接 OPTIONS 金丝雀。
+
+### Round 27 补记（11:09，v2）
+- **回归事故**：v1 把 onSession(true) 整体搬 executor → 真机完全投不上（11:01 会话：1000 帧到达、解码器 9 连启、0 帧渲染、dropped=202）。根因：true 迟到 ~1s，带 SPS 才执行 → codec 启动与 MainActivity surface 换装赛跑 → BufferQueue abandoned → buffer 回退（本机从不工作）→ 全灭。**风暴锤测不到此路径**（合成流无 SPS 不起 codec）——机器门盲区记录在案。
+- **v2**：true 恢复同步（旧交错），false 排队+代际守卫（被新 true 取代则跳过）。风暴 15/15 绿、时序零乱序、收线 4ms。
+- **教训入账**：改渲染时序的修复，机器门后必须真机首投验证再请用户；executor 化 = 时序变更，不是无害并发化。
