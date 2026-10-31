@@ -469,3 +469,16 @@ JVM 三旗全绿；airplay 旗 APK 已上电视（网络侧核验双绿）。**�
 - **F7/F8 显式跳过**：帧仓库/心跳为内部遥测，G3 条件未触发（G1 已由 R28 另路关闭），无可观察行为差异——记录性跳过，非遗漏。
 - **三旗 assembleDebug+test 全绿**。APK 已构建（含 R28 双修复 + F21 看门狗 + F22/F13），电视回来一键装机。
 - **移植清单终态**：F1✅ F4✅ F5✅ F9/F20✅(R28) F22✅ F13/F24✅ F23(无需移植=全默认) F7/F8(条件未触发) —— SPEC 路线 A 的行为面**全部覆盖**。
+
+---
+
+## Round 31（2026-10-31 晚）—— headless 注入器闭环 + 三修复（JNI detach / F13 实例化 / F21 会话保护）【Phase 3 用量 7/25】
+
+- **注入器全链打通（d92cfe3）**：`scripts/probe/mirror_inject.py`——OPTIONS/SETUP(二进制 plist type110) → 镜像数据 TCP → 128 字节头帧流（**头长度/时间戳 LE，VCL payload BE 长度前缀**；fmt 包 = UxPlay 内部布局 `6B头+BE短sps长+裸SPS+1隔+BE短pps长+裸PPS`，填 16/20/56/60 号字节 LE float 宽高）。`-Pkbtv.flags.injector=true` 门控 mirror_buffer 明文旁路（release 永不置位）。**fmt 每 GOP 重发会把 mid-stream SPS/PPS 喂进 OMX → 一帧后 ISE → 170ms 重启风暴**；对齐真实 sender（fmt 仅流首一次）后风暴归零。
+- **机器验证成绩（电视上，无需手机）**：冷启动直投（断电重启→不经预热注入）**frames=353 p95=115ms 过 assert 双门**；20s 单会话满帧率零重启 p95=38.6ms；G1 六连轮（12s+1s 间隔）每轮完整收发。
+- **三修复落地**：
+  - `466ab15` JNI pthread_key 自动 DetachCurrentThread（镜像线程退役退出不再 SIGABRT 全进程——Android 6 ART 行为）；
+  - `32d1b5a` F13 节流 per-codec-instance 化（renderedFrames 是 renderer 级累计，旧条件让任何渲过帧的会话失去 500ms 失败间隔→170ms 连击 MStar）；
+  - `c749c34` F21 活会话保护：wifi churn 新 network agent 每约 33s 杀栈一次（六连轮 session 3/6 即死于它→超时告警→服务重建）；现 idle 栈才响应该恢复钩子。
+- **环境事实**：电视 wifi churn 晚间高发；adbd TCP 可死于系统级压力（ping 通 5555 不通，现场重启治）；`[VDEC] Vdec Init Failed` = 解码器系统楔死判据（churn 累积，重启电视治）。gradle.org 当晚不可达——wrapper 8.7 缓存损坏时用本地已有 8.14.3 dist 克隆到 URL-hash 目录名可救急（gradle-wrapper.properties 改动**未提交**，勿入库）。
+- **欠账**：B/C 修复的六连轮复测被电视 adbd 失联打断（F21 guard 版已构建在 build 输出）；reconnect_hammer / assert_session 机器判据轮；之后才是一次用户四合一轮。
