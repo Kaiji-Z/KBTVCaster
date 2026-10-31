@@ -109,6 +109,11 @@ class MirrorVideoRenderer {
             if (newSurface == surface) null to null
             else {
                 surface = newSurface
+                // A new surface invalidates the old mode's jam history: reset
+                // the session-sticky degrade so the restart below takes the GL
+                // path on the fresh surface instead of the never-working blit
+                // tier (2026-10-31 auto-launch race lesson).
+                surfaceModeStarves = 0
                 // The codec renders into the Surface it was configured with.
                 stopCodecLocked() to feeder.also { feeder = null }
             }
@@ -337,7 +342,7 @@ class MirrorVideoRenderer {
             } catch (e: Exception) {
                 lastDecoderError = e
                 Timber.e(e, "mirror decoder error after $renderedFrames frames")
-                handleCodecError()
+                handleCodecError(codecRef)
                 return
             }
         }
@@ -468,7 +473,20 @@ class MirrorVideoRenderer {
         }
     }
 
-    private fun handleCodecError() {
+    private fun handleCodecError(failedCodec: MediaCodec?) {
+        // Stale-error guard: setSurface/setResolution/onSession tear the codec
+        // down intentionally mid-session; the exception surfacing in the
+        // feeder a moment later belongs to that retired instance. Counting it
+        // as a surface-mode starve degraded fresh sessions to the never-working
+        // buffer tier (2026-10-31 post-reboot black screen: the auto-launched
+        // Activity's surface arrived mid-session, the swap retired the first
+        // codec, two stale errors → session-sticky bufferMode).
+        synchronized(lock) {
+            if (failedCodec != null && failedCodec !== codec) {
+                Timber.i("ignoring stale decoder error (instance already retired)")
+                return
+            }
+        }
         // Degrade: once the firmware's surface-mode jammed this session,
         // restarts into the same mode burn seconds of black each time. The
         // buffer+blit tier is the proven-working path on this TV.
