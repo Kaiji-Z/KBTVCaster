@@ -30,5 +30,7 @@ raop_rtp_mirror_t *raop_rtp_mirror_init(logger_t *logger, raop_callbacks_t *call
 void raop_rtp_mirror_init_aes(raop_rtp_mirror_t *raop_rtp_mirror, uint64_t *streamConnectionID);
 void raop_rtp_mirror_start(raop_rtp_mirror_t *raop_rtp_mirror, unsigned short *mirror_data_lport, uint8_t show_client_FPS_data);
 void raop_rtp_mirror_stop(raop_rtp_mirror_t *raop_rtp_mirror);
+/* [kbtv] synchronous quiesce for async retirement; see raop_rtp_mirror.c */
+void raop_rtp_mirror_quiesce(raop_rtp_mirror_t *raop_rtp_mirror);
 void raop_rtp_mirror_destroy(raop_rtp_mirror_t *raop_rtp_mirror);
 #endif //RAOP_RTP_MIRROR_H

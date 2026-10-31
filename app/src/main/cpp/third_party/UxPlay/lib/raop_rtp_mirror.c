@@ -92,6 +92,10 @@ struct raop_rtp_mirror_s {
     /* These variables only edited mutex locked */
     int running;
     int joined;
+    /* [kbtv] set when quiesce() already delivered mirror_video_running(false):
+     * the worker's exit path must skip its own callback or a late false can
+     * land after the replacement instance's true (2026-10-31 flip race). */
+    int suppress_exit_callback;
 
     int flush;
     thread_handle_t thread_mirror;
@@ -838,8 +842,9 @@ raop_rtp_mirror_thread(void *arg)
     // Ensure running reflects the actual state
     MUTEX_LOCK(raop_rtp_mirror->run_mutex);
     raop_rtp_mirror->running = false;
+    int exit_callback_suppressed = raop_rtp_mirror->suppress_exit_callback;
     MUTEX_UNLOCK(raop_rtp_mirror->run_mutex);
-    if (raop_rtp_mirror->callbacks.mirror_video_running) {
+    if (!exit_callback_suppressed && raop_rtp_mirror->callbacks.mirror_video_running) {
         raop_rtp_mirror->callbacks.mirror_video_running(raop_rtp_mirror->callbacks.cls, false);
     }
 
@@ -931,10 +936,13 @@ raop_rtp_mirror_start(raop_rtp_mirror_t *raop_rtp_mirror, unsigned short *mirror
 void raop_rtp_mirror_stop(raop_rtp_mirror_t *raop_rtp_mirror) {
     assert(raop_rtp_mirror);
 
-    /* Check that we are running and thread is not
-     * joined (should never be while still running) */
+    /* [kbtv] guard on `joined` only. The old `!running ||` early-return let
+     * a self-exited or quiesced (running already 0) worker skip the join —
+     * destroy then freed the struct while the worker was still running its
+     * exit path (use-after-free). A thread that exited on its own still
+     * needs exactly one join before free; `joined` alone decides that. */
     MUTEX_LOCK(raop_rtp_mirror->run_mutex);
-    if (!raop_rtp_mirror->running || raop_rtp_mirror->joined) {
+    if (raop_rtp_mirror->joined) {
         MUTEX_UNLOCK(raop_rtp_mirror->run_mutex);
         return;
     }
@@ -953,6 +961,28 @@ void raop_rtp_mirror_stop(raop_rtp_mirror_t *raop_rtp_mirror) {
     MUTEX_LOCK(raop_rtp_mirror->run_mutex);
     raop_rtp_mirror->joined = 1;
     MUTEX_UNLOCK(raop_rtp_mirror->run_mutex);
+}
+
+/* [kbtv] synchronous quiesce for asynchronous retirement (2026-10-31).
+ * Deliver mirror_video_running(false) NOW, on the caller's thread, so the
+ * replacement instance's true can never overtake it, and suppress the
+ * worker's own exit callback. Sets running = 0 so the worker exits at its
+ * next loop check; the eventual stop/join/free happens in the reaper
+ * (stop's guard is `joined`-only, so the join is not skipped here). The
+ * receiver-side callback is a cheap state flip (Kotlin posts the heavy
+ * renderer teardown to its executor), so this never blocks the caller. */
+void raop_rtp_mirror_quiesce(raop_rtp_mirror_t *raop_rtp_mirror) {
+    assert(raop_rtp_mirror);
+    MUTEX_LOCK(raop_rtp_mirror->run_mutex);
+    int was_running = raop_rtp_mirror->running;
+    if (was_running) {
+        raop_rtp_mirror->suppress_exit_callback = 1;
+        raop_rtp_mirror->running = 0;
+    }
+    MUTEX_UNLOCK(raop_rtp_mirror->run_mutex);
+    if (was_running && raop_rtp_mirror->callbacks.mirror_video_running) {
+        raop_rtp_mirror->callbacks.mirror_video_running(raop_rtp_mirror->callbacks.cls, false);
+    }
 }
 
 void raop_rtp_mirror_destroy(raop_rtp_mirror_t *raop_rtp_mirror) {

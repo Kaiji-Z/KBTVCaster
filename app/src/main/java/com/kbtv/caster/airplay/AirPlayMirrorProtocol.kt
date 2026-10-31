@@ -557,17 +557,25 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
     override fun onDacpId(dacpId: String, activeRemote: String) {}
 
     override fun onMirrorRunning(running: Boolean) {
+        // Light state flips stay synchronous: native may call this on the
+        // single httpd thread (raop_conn_retire_streams quiesce → false,
+        // raop_rtp_mirror_start → true) and must never block on renderer
+        // teardown. The heavy renderer work is serialized through
+        // callbackExecutor, so a flip's false→true submission order is also
+        // its execution order (2026-10-31 async-retire design).
         mirrorFrames = 0
         mirrorUiActive = running
         if (running) startSessionWatchdog() else stopSessionWatchdog()
-        videoOut?.onSession(running)
-        try {
-            onMirrorSession?.invoke(running)
-        } catch (e: Exception) {
-            Timber.w(e, "mirror session listener failed")
+        callbackExecutor.execute {
+            videoOut?.onSession(running)
+            try {
+                onMirrorSession?.invoke(running)
+            } catch (e: Exception) {
+                Timber.w(e, "mirror session listener failed")
+            }
+            TraceRecorder.log("mirror_session", "running" to running)
+            Timber.i("mirror running=$running")
         }
-        TraceRecorder.log("mirror_session", "running" to running)
-        Timber.i("mirror running=$running")
     }
 
     override fun onVideoPlay(location: String, startPositionSeconds: Float) {
