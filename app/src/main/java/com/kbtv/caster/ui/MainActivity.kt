@@ -30,6 +30,7 @@ class MainActivity : AppCompatActivity() {
     // UI 元素
     private lateinit var playerView: PlayerView
     private lateinit var mirrorSurface: android.view.SurfaceView
+    private lateinit var mirrorConnectingUi: View
     private lateinit var standbyUi: View
     private lateinit var standbyStatus: TextView
     private lateinit var seekControlUi: View
@@ -83,6 +84,7 @@ class MainActivity : AppCompatActivity() {
         playerView = findViewById(R.id.playerView)
         standbyUi = findViewById(R.id.standbyUi)
         mirrorSurface = findViewById(R.id.mirrorSurface)
+        mirrorConnectingUi = findViewById(R.id.mirrorConnectingUi)
 
         // 镜像 Surface 生命周期交给 SurfaceHolder 回调：创建/销毁即接入/摘除服务侧解码器
         mirrorSurface.holder.addCallback(object : android.view.SurfaceHolder.Callback {
@@ -209,9 +211,12 @@ class MainActivity : AppCompatActivity() {
                 playerView.visibility = View.GONE
                 standbyUi.visibility = View.GONE
                 mirrorSurface.visibility = View.VISIBLE
+                // 乐播行为 F22：会话建立即给「正在连接」反馈，首帧出来前不是黑屏
+                mirrorConnectingUi.visibility = View.VISIBLE
             } else {
                 Timber.d("Mirror session ended, hiding mirror surface")
                 mirrorSurface.visibility = View.GONE
+                mirrorConnectingUi.visibility = View.GONE
                 // 交回播放状态判断：有内容显示播放器，否则待机
                 val player = coordinatorService?.getExoPlayer()
                 if (player != null && player.isPlaying) {
@@ -221,6 +226,14 @@ class MainActivity : AppCompatActivity() {
                     playerView.visibility = View.GONE
                     standbyUi.visibility = View.VISIBLE
                 }
+            }
+        }
+        // 首帧渲染成功：连接中反馈让位给画面（rendering 只在会话结束才回到 false，
+        // 解码器中途重启不会闪回 loading）
+        coordinatorService?.mirrorRenderer?.rendering?.observe(this) { rendering ->
+            if (rendering && mirrorConnectingUi.visibility == View.VISIBLE) {
+                Timber.d("Mirror first frame rendered, hiding connecting UI")
+                mirrorConnectingUi.visibility = View.GONE
             }
         }
     }

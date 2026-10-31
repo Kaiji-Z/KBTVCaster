@@ -148,4 +148,33 @@
         app:layout_constraintEnd_toEndOf="parent"
         android:visibility="gone" />
 
+    <!-- 连接中状态（乐播行为 F22：会话建立即显示 loading，首帧渲染后隐藏——
+         流先行时代这里是一块黑屏，用户只能猜 -->
+    <LinearLayout
+        android:id="@+id/mirrorConnectingUi"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:background="#000000"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:visibility="gone">
+
+        <ProgressBar
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:indeterminate="true" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:textSize="22sp"
+            android:textColor="#EEEEEE"
+            android:text="@string/mirror_connecting" />
+    </LinearLayout>
+
 </androidx.constraintlayout.widget.ConstraintLayout>

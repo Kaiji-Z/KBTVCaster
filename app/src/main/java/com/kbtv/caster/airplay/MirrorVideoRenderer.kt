@@ -510,6 +510,12 @@ class MirrorVideoRenderer {
         teardownCodec(oldCodec)
         if (restartsAllowed > 0) {
             restartsAllowed--
+            // Lebo F13/F24: an init-phase failure (nothing rendered yet)
+            // sleeps briefly before the retry instead of hammering the cold
+            // MStar back-to-back ("sleep, and will try init_decoder again").
+            if (renderedFrames == 0L) {
+                try { Thread.sleep(500) } catch (_: InterruptedException) {}
+            }
             Timber.w("restarting mirror decoder ($restartsAllowed restarts left)")
             synchronized(lock) {
                 queuedAtNs.clear()

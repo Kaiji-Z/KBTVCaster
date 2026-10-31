@@ -10,6 +10,7 @@
     <!-- 状态 -->
     <string name="service_running">投屏服务运行中</string>
     <string name="service_stopped">投屏服务已停止</string>
+    <string name="mirror_connecting">正在连接投屏…</string>
     <string name="starting_service">正在启动服务...</string>
     <string name="service_started">服务已启动</string>
     <string name="service_error">服务启动失败</string>
