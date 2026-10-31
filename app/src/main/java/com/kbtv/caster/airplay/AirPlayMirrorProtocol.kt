@@ -610,7 +610,22 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
         // httpd thread at quiesce/start; it must never block there).
         mirrorFrames = 0
         mirrorUiActive = running
-        if (running) startSessionWatchdog() else stopSessionWatchdog()
+        if (running) {
+            // A new session starting is itself proof the stack is alive:
+            // cancel the teardown-rebuild that onConnectionDestroy schedules
+            // after EVERY close. Left armed, that 5s bomb lands mid-session
+            // on quick switches (<2s gaps, G1) and kills the live cast —
+            // injector session 4 died exactly this way (2026-11-01). When
+            // the httpd is genuinely wedged no new session can start, so the
+            // rebuild still fires for the case it was built for.
+            synchronized(restartLock) {
+                restartPending?.let { restartHandler.removeCallbacks(it) }
+                restartPending = null
+            }
+            startSessionWatchdog()
+        } else {
+            stopSessionWatchdog()
+        }
         val gen = mirrorRunGen.incrementAndGet()
         if (running) {
             // Synchronous, exactly as pre-reaper: on this MStar/GL stack the
