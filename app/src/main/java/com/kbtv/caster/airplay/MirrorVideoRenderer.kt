@@ -57,6 +57,13 @@ class MirrorVideoRenderer {
     private var restartsAllowed = 0
     private var surfaceModeStarves = 0
     private var lastDecoderError: Exception? = null
+    // renderedFrames snapshot at codec start: the F13 init-retry pacing keys
+    // off "this codec instance has rendered nothing" — the renderer-lifetime
+    // counter never resets, so without the snapshot a session that rendered
+    // once ever loses the 500ms gap between failed restarts and hammers the
+    // cold MStar back-to-back (2026-10-31 injector session: one restart per
+    // 170ms, each new instance dying a frame in).
+    @Volatile private var framesAtCodecStart = 0L
 
     // render-side only (feeder thread)
     // volatile: written by the feeder thread, read cross-thread by tests
@@ -530,10 +537,11 @@ class MirrorVideoRenderer {
         teardownCodec(oldCodec)
         if (restartsAllowed > 0) {
             restartsAllowed--
-            // Lebo F13/F24: an init-phase failure (nothing rendered yet)
-            // sleeps briefly before the retry instead of hammering the cold
-            // MStar back-to-back ("sleep, and will try init_decoder again").
-            if (renderedFrames == 0L) {
+            // Lebo F13/F24: an init-phase failure (nothing rendered by THIS
+            // codec instance yet) sleeps briefly before the retry instead of
+            // hammering the cold MStar back-to-back ("sleep, and will try
+            // init_decoder again").
+            if (renderedFrames == framesAtCodecStart) {
                 try { Thread.sleep(500) } catch (_: InterruptedException) {}
             }
             Timber.w("restarting mirror decoder ($restartsAllowed restarts left)")
@@ -609,6 +617,7 @@ class MirrorVideoRenderer {
             TraceRecorder.log("mirror_decoder_started", "codec" to c.name, "bufferMode" to bufferMode)
             glDisplay?.setDecodeBufferSize(width, height)
             codec = c
+            framesAtCodecStart = renderedFrames
             val t = Thread({ feederLoop() }, "mirror-feeder").apply { start() }
             feeder = t
             TraceRecorder.log("mirror_codec_started", "w" to width, "h" to height, "codec" to c.name)
