@@ -70,3 +70,11 @@
 | F22 | **乐播 UX=播放器先行**：点投屏先弹 PlayerView+loading（表面/缓冲就绪）再落流；会话由播放器层管理 | 用户观察 + hpplay-java PlayController/PlayerView 日志 | R28 已修同根问题（表面赛跑）；方向=连接中状态（产品化待办） | ✅ 定性 |
 | F23 | **G4 调参表（本机 SHARP/MStar/API23 全默认）**：nLowlatencyType=0、bResetHard=1、bSupportDropFrame=1、bFlushCache=0、nSpsPpsUsage=0（仅 amlogic<24 给 1）、nFirstFrameOptimizeType=3；旋钮全部支持云端按设备覆写（PlayerConfigBean mpu/md/mr/mffo/mfc）；"sharp" 仅是常量表成员，无任何特殊分支 | jadx `com/hpplay/sdk/sink/a/f.java`（650 行机型矩阵）+ `MirrorPlayer.java` objArr[13] 构造 | **本机无旋钮差可移植**——乐播优势全在会话生命周期与播放器先行，非调参。G4 提取结案 | ✅ |
 | F24 | 乐播 init_decoder 失败重试：等待 500ms×25 轮（≈12.5s 上限，轮询取消旗标）后**再试一次**；mirror_player create 为 Java→原生桥，15 参数由 Java 层传入（参数索引→字段映射已解：[0x12]=playerType…[0x1f]/[0x2e]=全局 getter=bPtsUseMs/音频采样率） | Ghidra FUN_00249000（create）/ FUN_00252e80（init retry）反编译 | 我方 warmup 退避（1/30/60/120/240s）比它更耐心；G2 真解药=R28 表面赛跑修复，非重试节奏 | ✅ 记录 |
+
+## 注入器/环境事实（2026-10-31 晚，R31）
+
+- **F26 镜像线格式（实证）**：128B 头长度/时间戳 **LE**（byteutils 原生读）；VCL payload **BE 4 字节长度前缀**逐 NAL；fmt(0x0100) payload 为 UxPlay 内部布局：`6B 头 + BE short SPS 长 + 裸 SPS + 1B 隔 + BE short PPS 长 + 裸 PPS`，宽高 float 在头 16/20/56/60 号字节（LE）；fmt 时间戳必须与首个 VCL 相同（否则 prepend 丢弃）。fmt 布局错 → 有符号 short 读出负值 → utils_data_to_string 断言 abort。
+- **F27 mid-stream 参数集 = OMX 毒药（实证）**：真实 sender 只在参数集变化时发 fmt；每 GOP 重发 → SPS/PPS 随 VCL 进 OMX → 一帧后 ISE → 170ms 重启风暴（每实例活 1 帧即死）。
+- **F28 电视 wifi churn（实证）**：晚间 ConnectivityService 每约 33s 冒新 network agent；每次首见触发栈重启杀活会话，且可级联超时告警→服务重建。活会话即网络通路健康的证明，网络回调只该作为 idle 栈的恢复钩子。
+- **F29 VDEC 楔死判据**：`MSTAR_VDEC_API [VDEC] Vdec Init Failed!` 批量出现 = 系统级解码器楔死（codec churn 累积），应用层任何耐心/重试均无效，重启电视治。adbd TCP 监听可同死（ping 通 5555 拒）。
+- **F30 JNI 线程退役（Android 6 ART）**：attach 过的原生线程退出时未 detach → 全进程 abort。pthread_key 析构自动 detach 是标准解。
