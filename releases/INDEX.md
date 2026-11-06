@@ -23,3 +23,8 @@
 - Date: 2026-10-30
 - Changelog: [releases/v0.4.1/VERSION_v0.4.1.md](releases/v0.4.1/VERSION_v0.4.1.md)
 - Tag: `v0.4.1` (workflow-built APKs on the GitHub Release)
+
+## v0.5.0
+- Date: 2026-11-06
+- Changelog: [releases/v0.5.0/VERSION_v0.5.0.md](releases/v0.5.0/VERSION_v0.5.0.md)
+- Tag: `v0.5.0` (workflow-built APKs on the GitHub Release)
