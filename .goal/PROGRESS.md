@@ -500,3 +500,11 @@ JVM 三旗全绿；airplay 旗 APK 已上电视（网络侧核验双绿）。**�
 - **机器门三绿（正式判据，v7a 真机）**：①六连轮（12s+1s 间隔）每轮完整 353 帧 p95 6-7ms 零中断；②reconnect_hammer **5/5 PASS**（recovery 3-6ms）；③assert_session --since-hours 1 **RESULT PASS**（11 OK/12，唯一 LOW=装机后首轮 299 帧）。
 - **装机**：用户轮前已换 airplay-only 正式包（injector 明文旁路包不能用于真 iPhone 流）。
 - **待用户四合一轮**：G2 直投（自动唤起）/ G1 切视频 5+ 次 / 停止后重连 / G5 听声音。
+
+---
+
+## v0.5.0 发版（2026-11-06）【Phase 3 收尾】
+
+- 用户一句话批准「推送发版」。`scripts/release.sh 0.5.0`：versionCode 9，changelog 全量（四类会话杀手修复 + 冷启动耐心 + F22 连接态 + headless 验证体系），tag v0.5.0 @ 33c15fe。
+- CI release workflow **completed success**，双 APK 已上架：app-release.apk + app-release-airplay.apk。
+- 发版前处理：本地 gradle-wrapper 8.14.3 断网顶替 hack 已还原为 8.7（CI 既往三次发版路径，零扰动；本地 8.7 缓存损坏仅影响本机构建，可用缓存克隆法自救——见 R31 环境事实）。
