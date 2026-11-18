@@ -212,7 +212,7 @@ A feature is done if and only if ALL hold:
 - **缺失（gap #1/#3）**：会话回环压测（连接→拆→重连 N 轮 + RTSP 应答断言）不存在——2026-10-29 httpd 线程死亡类缺陷全靠用户真机暴露；host 侧 RTSP/mDNS 探针未入库（会话临时代码）
 
 ### 8.3 Flag mechanism [auto-fill] — UPDATED 2026-10-30
-- Mechanism: `app/build.gradle.kts` reads Gradle property `-Pkbtv.flags.<name>=<bool>` into a generated `BuildConfig.FLAG_*` boolean (default false == pre-change behavior); runtime access via `com.kbtv.caster.service.protocol.FeatureFlags`. Flags in production: `kbtv.flags.playbackPlan` → `FLAG_PLAYBACK_PLAN_ROUTING`; `kbtv.flags.airplay` → `FLAG_AIRPLAY`（镜像协议注册门控，v0.3.0 起）. Build-only variant selector: `kbtv.build.abi`（单 ABI 快装，app/build.gradle.kts:27-29）。CI：android.yml master 推送双旗（off/on）矩阵，release.yml tag 驱动双 APK 签名发版（v0.3.0/v0.4.0 验证）。
+- Mechanism: `app/build.gradle.kts` reads Gradle property `-Pkbtv.flags.<name>=<bool>` into a generated `BuildConfig.FLAG_*` boolean (default false == pre-change behavior); runtime access via `com.kbtv.caster.service.protocol.FeatureFlags`. Flags in production: `kbtv.flags.playbackPlan` → `FLAG_PLAYBACK_PLAN_ROUTING`; `kbtv.flags.airplay` → `FLAG_AIRPLAY`（镜像协议注册门控，v0.3.0 起）; `kbtv.flags.playerMenu` → `FLAG_PLAYER_MENU`（播放器菜单：MENU 键呼出，方向键切换 翻转180°/变速/循环/画面比例；决策逻辑 `ui/PlayerMenu.kt` 纯 JVM 可测，2026-11-18）. Build-only variant selector: `kbtv.build.abi`（单 ABI 快装，app/build.gradle.kts:27-29）。CI：android.yml master 推送双旗（off/on）矩阵，release.yml tag 驱动双 APK 签名发版（v0.3.0/v0.4.0 验证）。
 
 ### 8.4 Supervisor design [must-ask] — ANSWERED 2026-10-12
 > Developer answer (quoted): 「不需要，纯确定性断言（推荐）」

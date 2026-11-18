@@ -1,6 +1,6 @@
 # AGENTS.md - KBTVCaster
 
-**Updated:** 2026-10-18 | **Branch:** master
+**Updated:** 2026-11-18 | **Branch:** master
 
 Android TV **投屏接收端**：DLNA（基于 Cling UPnP 栈的 MediaRenderer，接收手机视频 App 推送的媒体 URL，用 Media3 ExoPlayer 播放）+ AirPlay 屏幕镜像（UxPlay 内核，实验性，flag 门控）。前台服务 + 开机自启。
 
@@ -175,7 +175,7 @@ class FooTest {
 ## VERIFICATION STATUS（2026-10-30 复审，详见 [VERIFICATION.md](VERIFICATION.md) §10）
 
 - **ACI 审计（2026-10-30）**：§2.1 无 UI 运行 ✅ 组件级达标（DLNA 全链 headless + AirPlay 组件级探针；完整镜像会话仍需物理 iPhone——FairPlay 配对无脚本驱动端，架构边界）；§2.2 状态记录 ✅ 达标（TraceRecorder JSONL 持久化跨重启 + 25 处 mirror_* 事件 + 原生 [kbtv] 计数器，2026-10-12 为 △）；§2.3 程序化接口 ✅ 达标（trace 拉取 / nativeServerAudioStats / RTSP·mDNS 探针）
-- **测试基建**：回归 `./gradlew test`（90 JVM 用例 × 三旗）；instrumented 9 文件（e2e：DLNA 控制点链、镜像解码路径、解码器 AB、GL 绘制、音频管线探针——真机实测可跑）；断言 JUnit 4 + mockito-kotlin；无 supervisor（开发者裁定 2026-10-12：纯确定性断言）；双生产 flag（airplay / playbackPlan）+ CI off/on 矩阵
+- **测试基建**：回归 `./gradlew test`（100 JVM 用例 × 三旗）；instrumented 9 文件（e2e：DLNA 控制点链、镜像解码路径、解码器 AB、GL 绘制、音频管线探针——真机实测可跑）；断言 JUnit 4 + mockito-kotlin；无 supervisor（开发者裁定 2026-10-12：纯确定性断言）；三生产 flag（airplay / playbackPlan / playerMenu）+ CI off/on 矩阵（playerMenu 尚未入 CI 矩阵）
 - **验收标准**：Phase-1 已冻结于 §8.5（2026-10-12）；Phase-2 镜像验收（≥300 帧 / p95<150ms / 断开重连）拟冻结 + 回环锤验收项——**待开发者确认（§8.6 PENDING 行）**
 
 **验证积压（2026-10-30 复审，按优先级）：**
