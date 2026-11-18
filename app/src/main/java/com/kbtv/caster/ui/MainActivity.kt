@@ -10,14 +10,19 @@ import android.os.IBinder
 import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
+import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.kbtv.caster.R
 import com.kbtv.caster.service.CastCoordinatorService
+import com.kbtv.caster.service.protocol.FeatureFlags
+import com.kbtv.caster.trace.TraceRecorder
 import timber.log.Timber
 
 /**
@@ -37,6 +42,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var seekBar: SeekBar
     private lateinit var currentTime: TextView
     private lateinit var totalTime: TextView
+
+    // 播放器菜单（flag kbtv.flags.playerMenu）：MENU 呼出，方向键导航，OK/左右切换
+    private lateinit var flipPlayerView: PlayerView
+    private lateinit var playerMenuPanel: LinearLayout
+    private val playerMenu = PlayerMenu()
+    private var menuOpen = false
 
     // 服务绑定
     private var coordinatorService: CastCoordinatorService? = null
@@ -86,6 +97,11 @@ class MainActivity : AppCompatActivity() {
         mirrorSurface = findViewById(R.id.mirrorSurface)
         mirrorConnectingUi = findViewById(R.id.mirrorConnectingUi)
 
+        // 播放器菜单与翻转面
+        flipPlayerView = findViewById(R.id.flipPlayerView)
+        playerMenuPanel = findViewById(R.id.playerMenuPanel)
+        buildMenuPanel()
+
         // 镜像 Surface 生命周期交给 SurfaceHolder 回调：创建/销毁即接入/摘除服务侧解码器
         mirrorSurface.holder.addCallback(object : android.view.SurfaceHolder.Callback {
             override fun surfaceCreated(holder: android.view.SurfaceHolder) {
@@ -124,7 +140,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupPlayerView() {
         coordinatorService?.getExoPlayer()?.let { exoPlayer ->
-            playerView.player = exoPlayer
+            activePlayerView().player = exoPlayer
+            // 速度/循环挂在播放器实例上跨投屏存续；绑定重建后菜单显示对齐实际值
+            playerMenu.syncFromPlayer(exoPlayer.playbackParameters.speed, exoPlayer.repeatMode == Player.REPEAT_MODE_ALL)
             Timber.d("PlayerView bound")
 
             playerListener = object : Player.Listener {
@@ -167,7 +185,7 @@ class MainActivity : AppCompatActivity() {
         runOnUiThread {
             Timber.d("Showing video, hiding standby UI")
             if (mirrorSurface.visibility != View.VISIBLE) {
-                playerView.visibility = View.VISIBLE
+                activePlayerView().visibility = View.VISIBLE
                 standbyUi.visibility = View.GONE
             }
         }
@@ -177,7 +195,7 @@ class MainActivity : AppCompatActivity() {
         runOnUiThread {
             Timber.d("Hiding video, showing standby UI")
             if (mirrorSurface.visibility != View.VISIBLE) {
-                playerView.visibility = View.GONE
+                activePlayerView().visibility = View.GONE
                 standbyUi.visibility = View.VISIBLE
             }
         }
@@ -220,10 +238,10 @@ class MainActivity : AppCompatActivity() {
                 // 交回播放状态判断：有内容显示播放器，否则待机
                 val player = coordinatorService?.getExoPlayer()
                 if (player != null && player.isPlaying) {
-                    playerView.visibility = View.VISIBLE
+                    activePlayerView().visibility = View.VISIBLE
                     standbyUi.visibility = View.GONE
                 } else {
-                    playerView.visibility = View.GONE
+                    activePlayerView().visibility = View.GONE
                     standbyUi.visibility = View.VISIBLE
                 }
             }
@@ -242,6 +260,7 @@ class MainActivity : AppCompatActivity() {
      * 完全停止播放，返回待机界面
      */
     private fun stopPlaybackAndReturnToStandby() {
+        if (menuOpen) closeMenu()
         coordinatorService?.getExoPlayer()?.let { player ->
             player.stop()
             player.clearMediaItems()
@@ -252,6 +271,111 @@ class MainActivity : AppCompatActivity() {
         Timber.d("Stopped playback, returned to standby")
     }
 
+    // ===== 播放器菜单（flag kbtv.flags.playerMenu；键位决策在 PlayerMenu 纯逻辑内）=====
+
+    /** 当前承载画面的播放面：翻转开启时为 texture 面，否则为默认 surface 面 */
+    private fun activePlayerView(): PlayerView = if (playerMenu.flipped) flipPlayerView else playerView
+
+    private fun openMenu() {
+        menuOpen = true
+        renderMenu()
+        playerMenuPanel.visibility = View.VISIBLE
+        TraceRecorder.log("player_menu", "action" to "open")
+    }
+
+    private fun closeMenu() {
+        menuOpen = false
+        playerMenuPanel.visibility = View.GONE
+        TraceRecorder.log("player_menu", "action" to "close")
+    }
+
+    private fun buildMenuPanel() {
+        playerMenuPanel.removeAllViews()
+        val title = TextView(this).apply {
+            text = "播放器菜单"
+            textSize = 26f
+            setTextColor(0xFF9A9AA2.toInt())
+            setPadding(0, 0, 0, 24)
+        }
+        playerMenuPanel.addView(title)
+        playerMenu.items.forEach { item ->
+            playerMenuPanel.addView(TextView(this).apply {
+                textSize = 30f
+                setPadding(0, 20, 0, 20)
+                tag = item
+            })
+        }
+        renderMenu()
+    }
+
+    private fun renderMenu() {
+        playerMenu.items.forEachIndexed { index, item ->
+            val row = playerMenuPanel.findViewWithTag<TextView>(item)
+            val selected = index == playerMenu.selectedIndex
+            row.text = (if (selected) "▶ " else "　") + item.label + "　" + playerMenu.labelFor(item)
+            row.setTextColor(if (selected) 0xFF7BD88F.toInt() else 0xFFF4F4F6.toInt())
+            row.setTypeface(null, if (selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+        }
+    }
+
+    private fun applyMenuEffect(effect: PlayerMenu.Effect) {
+        when (effect) {
+            PlayerMenu.Effect.SelectionMoved -> renderMenu()
+            is PlayerMenu.Effect.FlipChanged -> {
+                renderMenu()
+                applyFlip(effect.flipped)
+                TraceRecorder.log("player_menu", "action" to "flip", "on" to effect.flipped)
+            }
+            is PlayerMenu.Effect.SpeedChanged -> {
+                renderMenu()
+                coordinatorService?.getExoPlayer()?.setPlaybackSpeed(effect.speed)
+                TraceRecorder.log("player_menu", "action" to "speed", "speed" to effect.speed)
+            }
+            is PlayerMenu.Effect.RepeatChanged -> {
+                renderMenu()
+                coordinatorService?.getExoPlayer()?.repeatMode =
+                    if (effect.repeatAll) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
+                TraceRecorder.log("player_menu", "action" to "repeat", "all" to effect.repeatAll)
+            }
+            is PlayerMenu.Effect.AspectChanged -> {
+                renderMenu()
+                applyAspectRatio(effect.mode)
+                TraceRecorder.log("player_menu", "action" to "aspect", "mode" to effect.mode.name)
+            }
+            PlayerMenu.Effect.Close -> closeMenu()
+        }
+    }
+
+    /**
+     * 180° 画面翻转：在默认 surface 面与 texture 面之间搬运播放器。SurfaceView
+     * 内容不随 View 变换，翻转画面必须走 TextureView；关闭翻转即回 SurfaceView
+     * 合成路径——TextureView 的性能代价只在翻转开启期间存在（老电视需真机复核）。
+     */
+    @androidx.annotation.OptIn(UnstableApi::class)
+    private fun applyFlip(flipped: Boolean) {
+        val player = coordinatorService?.getExoPlayer() ?: return
+        val from = activePlayerView()
+        val to = if (flipped) flipPlayerView else playerView
+        if (from === to) return
+        to.rotation = if (flipped) 180f else 0f
+        to.resizeMode = from.resizeMode
+        PlayerView.switchTargetView(player, from, to)
+        to.visibility = View.VISIBLE
+        from.visibility = View.GONE
+    }
+
+    @androidx.annotation.OptIn(UnstableApi::class)
+    private fun applyAspectRatio(mode: PlayerMenu.AspectMode) {
+        val resize = when (mode) {
+            PlayerMenu.AspectMode.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+            PlayerMenu.AspectMode.FILL -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+            PlayerMenu.AspectMode.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+        }
+        // 两个播放面同步设置：翻转切换时比例保持
+        playerView.resizeMode = resize
+        flipPlayerView.resizeMode = resize
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         Timber.d("Key event: ${event.keyCode}, action: ${event.action}")
         return super.dispatchKeyEvent(event)
@@ -259,7 +383,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         Timber.d("onKeyDown: keyCode=$keyCode")
-        
+
+        // 菜单打开时消费导航/确认/返回键；音量与媒体键照旧走原有分支
+        if (menuOpen) {
+            val effect = playerMenu.handleKey(keyCode)
+            if (effect != null) {
+                applyMenuEffect(effect)
+                return true
+            }
+        }
+
         // 电视遥控器完全控制
         when (keyCode) {
             // 播放控制
@@ -340,6 +473,15 @@ class MainActivity : AppCompatActivity() {
             KeyEvent.KEYCODE_VOLUME_DOWN -> {
                 adjustVolume(-1)
                 return true
+            }
+
+            // MENU 键：播放中呼出播放器菜单。flag 未启用或非播放态时不消费，
+            // 交还系统，维持改动前行为。
+            KeyEvent.KEYCODE_MENU -> {
+                if (FeatureFlags.playerMenu && activePlayerView().visibility == View.VISIBLE) {
+                    openMenu()
+                    return true
+                }
             }
         }
         return super.onKeyDown(keyCode, event)
@@ -425,7 +567,7 @@ class MainActivity : AppCompatActivity() {
             playerListener?.let { player.removeListener(it) }
         }
         playerListener = null
-        playerView.player = null
+        activePlayerView().player = null
         coordinatorService?.mirrorRenderer?.setSurface(null)
         if (isBound) {
             unbindService(serviceConnection)

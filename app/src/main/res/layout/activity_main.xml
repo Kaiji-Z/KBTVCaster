@@ -19,6 +19,22 @@
         app:use_controller="false"
         android:visibility="gone" />
 
+    <!-- 180° 翻转播放面：菜单「画面翻转」开启时经 PlayerView.switchTargetView 接管播放器。
+         texture_view 支持 View 变换（SurfaceView 不随变换走）；关闭翻转即回默认面，
+         TextureView 合成代价只在翻转开启期间存在。 -->
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/flipPlayerView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:surface_type="texture_view"
+        app:show_buffering="when_playing"
+        app:use_controller="false"
+        android:visibility="gone" />
+
     <!-- 进度条 UI (底部) -->
     <LinearLayout
         android:id="@+id/seekControlUi"
@@ -73,6 +89,23 @@
         </LinearLayout>
 
     </LinearLayout>
+
+    <!-- 播放器菜单浮层（flag kbtv.flags.playerMenu；MENU 键呼出，方向键导航，条目在 MainActivity 动态生成） -->
+    <LinearLayout
+        android:id="@+id/playerMenuPanel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#CC101014"
+        android:paddingStart="40dp"
+        android:paddingEnd="56dp"
+        android:paddingTop="32dp"
+        android:paddingBottom="40dp"
+        android:layout_marginTop="60dp"
+        android:layout_marginStart="60dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        android:visibility="gone" />
 
     <!-- 待机界面 -->
     <LinearLayout
