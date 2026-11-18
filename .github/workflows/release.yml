@@ -1,7 +1,7 @@
 name: release
 
 # Tag-driven release: push a v* tag (scripts/release.sh does this) and CI
-# builds both signed release APK variants and attaches them to a GitHub
+# builds all signed release APK variants and attaches them to a GitHub
 # Release. Signing key is delivered via secrets (KBTV_KEYSTORE_BASE64,
 # KBTV_KEYSTORE_PASSWORD, KBTV_KEY_ALIAS, KBTV_KEY_PASSWORD).
 on:
@@ -51,11 +51,22 @@ jobs:
           ./gradlew assembleRelease -Pkbtv.flags.airplay=true --console=plain
           cp app/build/outputs/apk/release/app-release.apk out/app-release-airplay.apk
 
+      - name: Build release APK (player menu)
+        env:
+          KBTV_KEYSTORE_PATH: ${{ runner.temp }}/kbtv.keystore
+          KBTV_KEYSTORE_PASSWORD: ${{ secrets.KBTV_KEYSTORE_PASSWORD }}
+          KBTV_KEY_ALIAS: ${{ secrets.KBTV_KEY_ALIAS }}
+          KBTV_KEY_PASSWORD: ${{ secrets.KBTV_KEY_PASSWORD }}
+        run: |
+          ./gradlew assembleRelease -Pkbtv.flags.playerMenu=true --console=plain
+          cp app/build/outputs/apk/release/app-release.apk out/app-release-menu.apk
+
       - name: Verify APK signatures
         run: |
           APKSIGNER=$(ls "$ANDROID_HOME/build-tools/"*/apksigner | sort -V | tail -1)
           "$APKSIGNER" verify out/app-release.apk
           "$APKSIGNER" verify out/app-release-airplay.apk
+          "$APKSIGNER" verify out/app-release-menu.apk
 
       # releases/<tag>/VERSION_<tag>.md is the project changelog; GitHub's
       # auto-generated notes get appended after it.
