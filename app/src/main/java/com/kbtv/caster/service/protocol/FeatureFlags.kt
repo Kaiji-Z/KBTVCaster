@@ -19,4 +19,7 @@ object FeatureFlags {
 
     /** Register the AirPlay protocol in the coordinator's protocol list (push subset first). */
     val airplayProtocol: Boolean get() = BuildConfig.FLAG_AIRPLAY_PROTOCOL
+
+    /** On-player menu (remote MENU key): flip-180 / speed / repeat / aspect. Off = MENU key passthrough (pre-change). */
+    val playerMenu: Boolean get() = BuildConfig.FLAG_PLAYER_MENU
 }

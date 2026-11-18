@@ -25,6 +25,9 @@ android {
         // debug-only headless-injector bypass; never enable in release builds
         val flagInjector = (project.findProperty("kbtv.flags.injector") as? String)?.toBooleanStrictOrNull() ?: false
         buildConfigField("boolean", "FLAG_INJECTOR_BYPASS", flagInjector.toString())
+        // On-player menu (MENU key): flip-180 / speed / repeat / aspect. Off = key passthrough.
+        val flagPlayerMenu = (project.findProperty("kbtv.flags.playerMenu") as? String)?.toBooleanStrictOrNull() ?: false
+        buildConfigField("boolean", "FLAG_PLAYER_MENU", flagPlayerMenu.toString())
 
         // UxPlay mirror kernel (Phase 2): real TV is arm64, TV emulator x86 (32-bit).
         // -Pkbtv.build.abi=<abi> builds a single-ABI APK for slow network-adb installs.
