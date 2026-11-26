@@ -156,4 +156,14 @@ class PlayerMenuTest {
         assertEquals(1.0f, m.speed)
         assertTrue(!m.repeatAll)
     }
+
+    @Test
+    fun `resetFlip should zero the flip intent for service-rebind reset`() {
+        val m = PlayerMenu()
+        m.handleKey(dpadCenter) // flip on
+        assertTrue((m.items[m.selectedIndex] == PlayerMenu.Item.FLIP))
+
+        m.resetFlip()
+        assertEquals("关", m.labelFor(PlayerMenu.Item.FLIP))
+    }
 }

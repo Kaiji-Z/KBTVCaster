@@ -49,6 +49,9 @@ class MainActivity : AppCompatActivity() {
     private val playerMenu = PlayerMenu()
     private var menuOpen = false
 
+    /** 当前实际挂着播放器的画面；翻转切换的唯一事实来源（playerMenu.flipped 只是意图） */
+    private var attachedPlayerView: PlayerView? = null
+
     // 服务绑定
     private var coordinatorService: CastCoordinatorService? = null
     private var isBound = false
@@ -140,7 +143,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupPlayerView() {
         coordinatorService?.getExoPlayer()?.let { exoPlayer ->
-            activePlayerView().player = exoPlayer
+            // 服务重绑 = 新播放器实例，画面回默认面、翻转意图归零
+            attachedPlayerView = playerView
+            playerView.player = exoPlayer
+            playerMenu.resetFlip()
             // 速度/循环挂在播放器实例上跨投屏存续；绑定重建后菜单显示对齐实际值
             playerMenu.syncFromPlayer(exoPlayer.playbackParameters.speed, exoPlayer.repeatMode == Player.REPEAT_MODE_ALL)
             Timber.d("PlayerView bound")
@@ -273,8 +279,8 @@ class MainActivity : AppCompatActivity() {
 
     // ===== 播放器菜单（flag kbtv.flags.playerMenu；键位决策在 PlayerMenu 纯逻辑内）=====
 
-    /** 当前承载画面的播放面：翻转开启时为 texture 面，否则为默认 surface 面 */
-    private fun activePlayerView(): PlayerView = if (playerMenu.flipped) flipPlayerView else playerView
+    /** 当前承载画面的播放面：跟随实际挂载，不反推 */
+    private fun activePlayerView(): PlayerView = attachedPlayerView ?: playerView
 
     private fun openMenu() {
         menuOpen = true
@@ -350,11 +356,14 @@ class MainActivity : AppCompatActivity() {
      * 180° 画面翻转：在默认 surface 面与 texture 面之间搬运播放器。SurfaceView
      * 内容不随 View 变换，翻转画面必须走 TextureView；关闭翻转即回 SurfaceView
      * 合成路径——TextureView 的性能代价只在翻转开启期间存在（老电视需真机复核）。
+     *
+     * from 取自 [attachedPlayerView] 而非 playerMenu.flipped：状态机在进入本方法
+     * 前已翻转 flag，若按 flag 反推会 from===to 早退（首版实测 bug：翻转永远无效）。
      */
     @androidx.annotation.OptIn(UnstableApi::class)
     private fun applyFlip(flipped: Boolean) {
         val player = coordinatorService?.getExoPlayer() ?: return
-        val from = activePlayerView()
+        val from = attachedPlayerView ?: playerView
         val to = if (flipped) flipPlayerView else playerView
         if (from === to) return
         to.rotation = if (flipped) 180f else 0f
@@ -362,6 +371,8 @@ class MainActivity : AppCompatActivity() {
         PlayerView.switchTargetView(player, from, to)
         to.visibility = View.VISIBLE
         from.visibility = View.GONE
+        attachedPlayerView = to
+        Timber.d("Flip: attached=${if (flipped) "texture" else "surface"}")
     }
 
     @androidx.annotation.OptIn(UnstableApi::class)
@@ -567,7 +578,9 @@ class MainActivity : AppCompatActivity() {
             playerListener?.let { player.removeListener(it) }
         }
         playerListener = null
-        activePlayerView().player = null
+        playerView.player = null
+        flipPlayerView.player = null
+        attachedPlayerView = null
         coordinatorService?.mirrorRenderer?.setSurface(null)
         if (isBound) {
             unbindService(serviceConnection)

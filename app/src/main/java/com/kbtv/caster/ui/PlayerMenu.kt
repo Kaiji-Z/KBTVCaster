@@ -78,6 +78,11 @@ class PlayerMenu {
         this.repeatAll = repeatAll
     }
 
+    /** 服务重启重绑时由 Activity 调用：视图层重建即回正，翻转意图随之归零 */
+    fun resetFlip() {
+        flipped = false
+    }
+
     /** 条目右侧的当前值文案 */
     fun labelFor(item: Item): String = when (item) {
         Item.FLIP -> if (flipped) "开" else "关"
