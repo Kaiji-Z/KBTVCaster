@@ -65,8 +65,8 @@ def udn_from_logcat():
     m = re.findall(r'"event":"upnp_registered","udn":"([^"]+)"', out)
     if m:
         return m[-1]
-    out = adb("logcat", "-d", "-s", "DLNAUtils")
-    matches = re.findall(r"UDN=([0-9a-fA-F:.\-]+)", out)
+    out = adb("logcat", "-d", "-s", "DlnaBootstrap")
+    matches = re.findall(r"UDN=(\S+)", out)
     return matches[-1].strip() if matches else None
 
 
@@ -141,19 +141,28 @@ def soap_action(url, action, args_xml):
         return r.status, r.read().decode("utf-8", "replace")
 
 
-def trace_has_event(event, timeout_s=30):
+def trace_has_event(event, timeout_s=30, since_lines=0):
+    """Wait for `event` in the trace. since_lines skips the first N lines so
+    the check covers only events appended AFTER the run's baseline — otherwise
+    a play_started from ANY earlier cast in the persisted file would pass."""
     deadline = time.time() + timeout_s
     needle = f'"event":"{event}"'
+    lines = []
     while time.time() < deadline:
-        out = adb("shell", f"run-as {PKG} cat files/trace/cast.jsonl")
-        if needle in out:
+        lines = [l for l in adb("shell", f"run-as {PKG} cat files/trace/cast.jsonl").splitlines() if l.strip()]
+        if any(needle in l for l in lines[since_lines:]):
             print(f"[+] trace shows {event}")
             return True
         time.sleep(1)
-    print(f"[-] trace never showed {event}; last 5 lines:")
-    for line in out.strip().splitlines()[-5:]:
+    print(f"[-] trace never showed {event} after line {since_lines} (baseline); last 5 lines:")
+    for line in lines[-5:]:
         print("    " + line)
     return False
+
+
+def trace_line_count() -> int:
+    out = adb("shell", f"run-as {PKG} cat files/trace/cast.jsonl")
+    return len([l for l in out.splitlines() if l.strip()])
 
 
 class WavHandler(http.server.BaseHTTPRequestHandler):
@@ -221,7 +230,7 @@ def main():
     # 3. Find the Cling descriptor (exact path from the app's trace; legacy fallback includes /upnp base).
     udn = udn_from_logcat()
     if not udn:
-        print("[-] UDN not found in logcat/trace (is this a debug build with DLNAUtils logging?)")
+        print("[-] UDN not found in logcat/trace (is this a debug build with DlnaBootstrap logging?)")
         return 4
     print(f"[+] device UDN: {udn}")
     desc_path = descriptor_path_from_trace() or f"/upnp/dev/{udn}/desc"
@@ -238,7 +247,10 @@ def main():
         return 6
     print(f"[+] AVTransport control: {control}")
 
-    # 4. Drive it like a phone app would.
+    # 4. Drive it like a phone app would. Baseline the trace FIRST: the
+    # play_started assertion must judge only this run's events (the file is
+    # append-only and any earlier cast left a play_started behind).
+    baseline = trace_line_count()
     try:
         status, _ = soap_action(
             control, "SetAVTransportURI",
@@ -253,8 +265,8 @@ def main():
         print(f"[-] SOAP failed: {e}")
         return 7
 
-    # 5. Verify the chain left evidence.
-    ok = trace_has_event("play_started", timeout_s=30)
+    # 5. Verify the chain left evidence — only events appended after the baseline.
+    ok = trace_has_event("play_started", timeout_s=30, since_lines=baseline)
     adb("forward", "--remove", f"tcp:{local_port}")
     httpd.shutdown()
     print("[=] RESULT: " + ("PASS" if ok else "FAIL"))
