@@ -10,7 +10,6 @@ class CasterApplication : Application() {
 
     companion object {
         const val NOTIFICATION_CHANNEL_SERVICE = "caster_service"
-        const val NOTIFICATION_CHANNEL_PLAYBACK = "caster_playback"
 
         /**
          * Configure XML parser for compatibility with custom Android ROMs
@@ -57,25 +56,14 @@ class CasterApplication : Application() {
 
             val serviceChannel = NotificationChannel(
                 NOTIFICATION_CHANNEL_SERVICE,
-                "投屏服务",
+                getString(R.string.foreground_service_channel),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "投屏服务通知"
                 setShowBadge(false)
             }
 
-            val playbackChannel = NotificationChannel(
-                NOTIFICATION_CHANNEL_PLAYBACK,
-                "播放控制",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "播放控制通知"
-                setShowBadge(false)
-            }
-
-            notificationManager.createNotificationChannels(
-                listOf(serviceChannel, playbackChannel)
-            )
+            notificationManager.createNotificationChannels(listOf(serviceChannel))
         }
     }
 }

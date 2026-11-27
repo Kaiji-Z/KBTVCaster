@@ -19,6 +19,8 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import com.kbtv.caster.BuildConfig
+import com.kbtv.caster.CasterApplication
+import com.kbtv.caster.R
 import com.kbtv.caster.ui.MainActivity
 import com.kbtv.caster.service.protocol.CastProtocol
 import com.kbtv.caster.service.protocol.DlnaProtocol
@@ -37,8 +39,9 @@ import timber.log.Timber
  * player and the rendering decisions (HLS detection, Baidu UA, foregrounding),
  * so protocols stay thin transport adapters.
  *
- * Currently registered: [DlnaProtocol]. A future mirror protocol (companion
- * App + MediaProjection) plugs in by adding to [protocols].
+ * Currently registered: [DlnaProtocol] always; the AirPlay mirror protocol
+ * joins the list when `kbtv.flags.airplay` is on. New protocols plug in by
+ * adding to [protocols].
  */
 class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
 
@@ -52,12 +55,6 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
     // Service status
     private val _serviceStatus = MutableLiveData<ServiceStatus>(ServiceStatus.STOPPED)
     val serviceStatus: LiveData<ServiceStatus> = _serviceStatus
-
-    private val _deviceName = MutableLiveData<String>("")
-    val deviceName: LiveData<String> = _deviceName
-
-    private val _rendererReady = MutableLiveData<Boolean>(false)
-    val rendererReady: LiveData<Boolean> = _rendererReady
 
     // Server state
     @Volatile private var isRunning = false
@@ -89,8 +86,6 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
         TraceRecorder.init(filesDir, BuildConfig.DEBUG)
         Timber.d("CastCoordinatorService created")
         TraceRecorder.log("service_created")
-        // 设备名称固定为"凯机投屏"
-        _deviceName.value = "凯机投屏"
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -108,8 +103,7 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
     }
 
     /**
-     * Start all casting services with auto-recovery
-     * Uses TVRemoteIME's DLNA implementation
+     * Start all casting services with auto-recovery.
      */
     private fun start() {
         if (isRunning) return
@@ -146,15 +140,13 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
                     TraceRecorder.log("protocol_start_failed", "protocol" to protocol.name, "error" to e.message)
                 }
             }
-            _rendererReady.value = true
-
             isRunning = true
             restartAttempts = 0
             _serviceStatus.value = ServiceStatus.RUNNING
             TraceRecorder.log("service_running")
 
             Timber.d("CastCoordinatorService started successfully")
-            showNotification("凯机投屏服务运行中", "点击打开遥控器")
+            showNotification(getString(R.string.foreground_service_notification), "点击打开遥控器")
 
         } catch (e: Exception) {
             Timber.e(e, "Failed to start CastCoordinatorService")
@@ -223,7 +215,6 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
 
         isRunning = false
         _serviceStatus.value = ServiceStatus.STOPPED
-        _rendererReady.value = false
 
         Timber.d("CastCoordinatorService stopped")
         TraceRecorder.log("service_stopped")
@@ -419,8 +410,9 @@ class CastCoordinatorService : Service(), CastProtocol.PlaybackSink {
     companion object {
         const val ACTION_START = "com.kbtv.caster.action.START"
         const val ACTION_STOP = "com.kbtv.caster.action.STOP"
-        private const val NOTIFICATION_CHANNEL_ID = "caster_service"
+        // Same channel CasterApplication creates — a literal here used to
+        // drift from the creation side (GOTCHAS: castertv_channel mismatch).
+        private const val NOTIFICATION_CHANNEL_ID = CasterApplication.NOTIFICATION_CHANNEL_SERVICE
         private const val NOTIFICATION_ID = 1001
-        private const val NOTIFICATION_CHANNEL_NAME = "CasterTV Service"
     }
 }
