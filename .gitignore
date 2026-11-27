@@ -20,9 +20,6 @@ ehthumbs.db
 Desktop.ini
 
 # Android
-app/build/
-app/*.apk
-app/*.aab
 local.properties
 *.dex
 *.class
@@ -48,8 +45,12 @@ nul
 # Working notes
 temp/
 
-# AI coding tool caches
-.opencode/
+# AI coding tool caches. .opencode/ also hosts the tracked versioning skill
+# (.opencode/skills/kbtv-versioning), so ignore its contents individually and
+# keep the skills tree addable — excluding the directory itself would silently
+# swallow every new skill file.
+.opencode/*
+!.opencode/skills/
 .omo/
 app/.cxx/
 app/src/main/cpp/third_party/UxPlay/lib/*.rej
