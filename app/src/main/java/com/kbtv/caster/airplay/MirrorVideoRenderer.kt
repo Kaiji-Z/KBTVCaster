@@ -70,15 +70,27 @@ class MirrorVideoRenderer {
     // (FlipStreamReproTest polls it; without volatile ARM caches it stale)
     @Volatile private var renderedFrames = 0L
 
+    // Session-scoped frame counter (feeder thread). renderedFrames above stays
+    // lifecycle-wide ON PURPOSE: the decoder-recovery heuristics (framesAtCodecStart,
+    // the cold-wait gate, the degrade gate) compare against the renderer's whole
+    // life. Everything user-visible — the first-frame signal, mirror_render_tick,
+    // mirror_session_end — must be PER SESSION: a lifecycle first-frame check fires
+    // once per process, so every session after the first kept the "connecting"
+    // overlay up forever (F22), and session_end reported inherited counts, voiding
+    // assert_session.py's per-session frames criterion.
+    @Volatile private var sessionFrames = 0L
+
     /** Test/trace read-only view of the decode-output counter. */
     val renderedFrameCount: Long get() = renderedFrames
+    // Session-scoped drop counters: reset in onSession(true), reported by
+    // mirror_render_tick / mirror_session_end / logStatsLocked.
     private var droppedFrames = 0L
     private var h265Dropped = 0L
     private val latencyMicros = ArrayList<Long>()
     private val queuedAtNs = HashMap<Long, Long>()
     private var lastPtsUs = 0L
 
-    private class PendingNal(val data: ByteArray, val ptsUs: Long, val slice: Boolean)
+    private class PendingNal(val data: ByteArray, val ptsUs: Long)
 
     // Debug-only raw stream capture (set by the service when debuggable):
     // the first AUs of a session land in <dir>/mirror-dump.h264 so a failed
@@ -173,6 +185,7 @@ class MirrorVideoRenderer {
             // stats only after the feeder thread is dead (it owns latencyMicros)
             synchronized(lock) {
                 pending.clear()
+                queuedAtNs.clear()
                 logStatsLocked("mirror_session_end")
             }
         } else {
@@ -182,6 +195,11 @@ class MirrorVideoRenderer {
                 restartsAllowed = MAX_RESTARTS
                 surfaceModeStarves = 0
                 lastDecoderError = null
+                // fresh per-session accounting (see sessionFrames kdoc)
+                sessionFrames = 0
+                droppedFrames = 0
+                h265Dropped = 0
+                latencyMicros.clear()
                 maybeStartCodecLocked()
             }
         }
@@ -248,7 +266,7 @@ class MirrorVideoRenderer {
                 if (nalTypeOf(nal) == NAL_SLICE || nalTypeOf(nal) == NAL_IDR) {
                     queuedAtNs[ptsUs] = System.nanoTime()
                 }
-                pending.addLast(PendingNal(nal, ptsUs, true))
+                pending.addLast(PendingNal(nal, ptsUs))
             }
             while (pending.size > MAX_PENDING_NALS) {
                 val stale = pending.pollFirst() ?: break
@@ -427,6 +445,10 @@ class MirrorVideoRenderer {
                 else -> {
                     queuedAtNs.remove(info.presentationTimeUs)?.let { queuedNs ->
                         latencyMicros.add((System.nanoTime() - queuedNs) / 1000)
+                        // Bounded window: latencyMicros fed every p95 log; unbounded,
+                        // a multi-hour mirror session would grow it without limit and
+                        // re-sort the whole history every STATS_EVERY frames.
+                        if (latencyMicros.size > MAX_LATENCY_SAMPLES) latencyMicros.removeAt(0)
                     }
                     if (bufferMode) {
                         val s = synchronized(lock) { surface }
@@ -460,13 +482,14 @@ class MirrorVideoRenderer {
                         codecRef.releaseOutputBuffer(oIdx, true)
                     }
                     renderedFrames++
+                    sessionFrames++
                     statRendered++
-                    if (renderedFrames == 1L) {
+                    if (sessionFrames == 1L) {
                         Timber.i("first mirror frame rendered (${width}x${height}, bufferMode=$bufferMode)")
                         _rendering.postValue(true)
                         TraceRecorder.log("mirror_first_frame", "w" to width, "h" to height, "bufferMode" to bufferMode)
                     }
-                    if (renderedFrames % STATS_EVERY == 0L) {
+                    if (sessionFrames % STATS_EVERY == 0L) {
                         val winS = (System.nanoTime() - statWinStart) / 1e9
                         val fedPerS = if (winS > 0) statFed / winS else 0.0
                         val outPerS = if (winS > 0) statRendered / winS else 0.0
@@ -489,7 +512,7 @@ class MirrorVideoRenderer {
                         }
                         TraceRecorder.log(
                             "mirror_render_tick",
-                            "frames" to renderedFrames,
+                            "frames" to sessionFrames,
                             "dropped" to droppedFrames,
                             "skippedBlits" to skippedBlits,
                             "p95Micros" to p95Now,
@@ -810,7 +833,7 @@ class MirrorVideoRenderer {
 
     /** Must hold [lock] or be render-side; logs session decode statistics. */
     private fun logStatsLocked(event: String) {
-        val frames = renderedFrames
+        val frames = sessionFrames
         val p95 = if (latencyMicros.isEmpty()) 0L else {
             val sorted = latencyMicros.sorted()
             sorted[sorted.size * 95 / 100]
@@ -909,6 +932,8 @@ class MirrorVideoRenderer {
          * 327ms); 2 bounds the queue wait to ~2 frame intervals. */
         const val CATCHUP_PENDING_NALS = 2
         const val MAX_RESTARTS = 6
+        /** Latency samples kept for the p95 log; older samples fall off the front. */
+        const val MAX_LATENCY_SAMPLES = 20_000
         /** NALs fed with zero decoder output before treating it as stalled. */
         const val STALL_FED_THRESHOLD = 30L
         /** Hard ceiling on the stall window; must exceed the codec start time. */
