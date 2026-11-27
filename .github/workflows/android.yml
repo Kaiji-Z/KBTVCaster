@@ -28,3 +28,6 @@ jobs:
 
       - name: Run JVM tests (flag on, airplay)
         run: ./gradlew test -Pkbtv.flags.airplay=true --console=plain
+
+      - name: Run JVM tests (flag on, playerMenu)
+        run: ./gradlew test -Pkbtv.flags.playerMenu=true --console=plain
