@@ -1,3 +1,19 @@
+## v0.1.0
+- Date: 2026-01-18
+- Tag: `v0.1.0`
+- Commit: `274dbc1` (changelog 只存于 temp/，未入库)
+
+## v0.1.1
+- Date: 2026-01-19
+- Tag: `v0.1.1`
+- Commit: `33b62d3` (changelog 只存于 temp/，未入库)
+
+## v0.1.2
+- Date: 2026-01-19
+- Changelog: [releases/v0.1.2/VERSION_v0.1.2.md](releases/v0.1.2/VERSION_v0.1.2.md)
+- Tag: `v0.1.2`
+- Commit: `821c4f4`
+
 ## v0.2.0
 - Date: 2026-01-20
 - Local Archive: [releases/v0.2.0/](releases/v0.2.0/)

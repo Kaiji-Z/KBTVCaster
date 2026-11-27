@@ -201,18 +201,18 @@ A feature is done if and only if ALL hold:
 - CLI/API command to trigger a workflow:
   None built-in. Real-world trigger is a UPnP control point sending SetAVTransportURI over SOAP → `DlnaProtocol.onPlay` (DlnaProtocol.kt:50-53). In-process, drive `CastProtocol.PlaybackSink.onCommand` directly (precedent: DlnaProtocolTest.kt:24-29). Needed for remediation: instrumented-test entry or control-point simulator script.
 - Command/API to fetch a trace:
-  `adb shell run-as com.kbtv.caster cat files/trace/cast.jsonl` (TraceRecorder.kt:19, structured JSONL, persists across reboots — field-proven 2026-10-26/29 forensics). Live audio-engine counters: `NativeBridge.nativeServerAudioStats` (native_bridge.cpp:438-443). Protocol health: RTSP OPTIONS probe against port 7000 (verified ad-hoc this session; script not yet committed — gap #2).
+  `adb shell run-as com.kbtv.caster cat files/trace/cast.jsonl` (TraceRecorder.kt:19, structured JSONL, persists across reboots — field-proven 2026-10-26/29 forensics). Live audio-engine counters: `NativeBridge.nativeServerAudioStats` (native_bridge.cpp:438-443). Protocol health: RTSP OPTIONS probe against port 7000（已入库 scripts/probe/rtsp_health.py，另有 reconnect_hammer / setup_storm / mirror_inject / mdns_query / assert_session）.
 
 ### 8.2 Test infra [auto-fill] — REFRESHED 2026-10-30 (Phase-2 field rounds)
 - Regression run command: `./gradlew test`（本机 wrapper 损坏，改用缓存 8.14.3 直调，见 .goal/SPEC.md §6）；三旗态：默认 / `-Pkbtv.flags.playbackPlan=true` / `-Pkbtv.flags.airplay=true`
-- Regression set directory: `app/src/test/java/com/kbtv/caster/` — 90 tests @ `@Test` across 11 files (grep 2026-10-30；含 Phase-2 新增 TraceRecorderTest / AirPlayCommandMapperTest / AirPlayRequestTest / AirPlayServerTest)
+- Regression set directory: `app/src/test/java/com/kbtv/caster/` — 78 tests @ `@Test` across 8 files（2026-11-27 审计重整：删除死代码 Kotlin AirPlay 实现 4 文件及其 27 个测试、占位 MediaUriTest 7 个、vendored 枚举断言 TransportStateTest 8 个；新增 RendererPlayerTest 19 用例真实覆盖净室 DMR 状态机）
 - Instrumented: `app/src/androidTest/java/com/kbtv/caster/e2e/` — 9 files (DlnaE2eTest, AirPlayE2eTest, MirrorDecodePathTest, MirrorRenderPathTest, MirrorRendererInProcessTest, DecoderAbTest, GlDisplayDrawTest, AudioPipelineProbeTest, TestMediaServer)。真机（SHARP Android 6）实测可跑：DecoderAbTest 控制实验 622/733 帧、AudioPipelineProbeTest sine+AAC 探针
 - Host-side control-point simulator: `app/src/androidTest/assets/controlpoint/dlna_control_point.py`（stdlib-only；trace 取 UDN+描述符路径 → /proc 端口枚举 + adb forward → 描述符 200 → SOAP SetAVTransportURI/Play（SOAPACTION 需双引号）→ trace 断言 play_started）
 - Assertion framework: JUnit 4.13.2 + mockito-core 5.8.0 + mockito-kotlin 5.2.1 + kotlinx-coroutines-test. Capturing-sink pattern established at DlnaProtocolTest.kt:24-29.
-- **缺失（gap #1/#3）**：会话回环压测（连接→拆→重连 N 轮 + RTSP 应答断言）不存在——2026-10-29 httpd 线程死亡类缺陷全靠用户真机暴露；host 侧 RTSP/mDNS 探针未入库（会话临时代码）
+- **已落地（2026-10-30，§10 gap #1–#3）**：reconnect_hammer / setup_storm / mirror_inject / rtsp_health / mdns_query / assert_session 全部入库 scripts/probe/（stdlib-only，勿对使用中的接收端上锤）
 
 ### 8.3 Flag mechanism [auto-fill] — UPDATED 2026-10-30
-- Mechanism: `app/build.gradle.kts` reads Gradle property `-Pkbtv.flags.<name>=<bool>` into a generated `BuildConfig.FLAG_*` boolean (default false == pre-change behavior); runtime access via `com.kbtv.caster.service.protocol.FeatureFlags`. Flags in production: `kbtv.flags.playbackPlan` → `FLAG_PLAYBACK_PLAN_ROUTING`; `kbtv.flags.airplay` → `FLAG_AIRPLAY`（镜像协议注册门控，v0.3.0 起）; `kbtv.flags.playerMenu` → `FLAG_PLAYER_MENU`（播放器菜单：MENU 键呼出，方向键切换 翻转180°/变速/循环/画面比例；决策逻辑 `ui/PlayerMenu.kt` 纯 JVM 可测，2026-11-18）. Build-only variant selector: `kbtv.build.abi`（单 ABI 快装，app/build.gradle.kts:27-29）。CI：android.yml master 推送双旗（off/on）矩阵，release.yml tag 驱动双 APK 签名发版（v0.3.0/v0.4.0 验证）。
+- Mechanism: `app/build.gradle.kts` reads Gradle property `-Pkbtv.flags.<name>=<bool>` into a generated `BuildConfig.FLAG_*` boolean (default false == pre-change behavior); runtime access via `com.kbtv.caster.service.protocol.FeatureFlags`. Flags in production: `kbtv.flags.playbackPlan` → `FLAG_PLAYBACK_PLAN_ROUTING`; `kbtv.flags.airplay` → `FLAG_AIRPLAY`（镜像协议注册门控，v0.3.0 起）; `kbtv.flags.playerMenu` → `FLAG_PLAYER_MENU`（播放器菜单：MENU 键呼出，方向键切换 翻转180°/变速/循环/画面比例；决策逻辑 `ui/PlayerMenu.kt` 纯 JVM 可测，2026-11-18）. Build-only variant selector: `kbtv.build.abi`（单 ABI 快装，app/build.gradle.kts:27-29）。CI：android.yml master 推送四态矩阵（默认 + playbackPlan/airplay/playerMenu 三旗，2026-11-27 起），release.yml tag 驱动三 APK（默认/airplay/menu）签名发版（v0.3.0 起验证）。debug-only 注入旗 `kbtv.flags.injector`（release 构建强制关闭，防明文镜像旁路进分发包）。
 
 ### 8.4 Supervisor design [must-ask] — ANSWERED 2026-10-12
 > Developer answer (quoted): 「不需要，纯确定性断言（推荐）」
@@ -253,6 +253,7 @@ A feature is done if and only if ALL hold:
 | 8.7 | auto-fill→must-ask | ANSWERED (JUnit; scope = emulator instrumented + DLNA control-point sim) | code scan + developer 2026-10-12 |
 | 8.1/8.2/8.3 | auto-fill | RE-AUDITED & REFRESHED (trace API now exists; 90 JVM + 9 instrumented files; 2 prod flags + CI matrix) | code scan 2026-10-30 (this diagnosis) |
 | 8.5 | must-ask | **PENDING** — Phase-2 镜像验收标准（≥300 帧 / p95<150ms / 断开重连）拟从会话 goal 冻结入册 + 新增回环锤验收项，待开发者一句话确认 | session goal (user-authored) + 2026-10-30 诊断提议 |
+| 8.1/8.2/8.3 | auto-fill | RE-AUDITED 2026-11-27（78 JVM 用例/8 文件；四态 CI 矩阵；injector 旗入册；死代码/假测试清理与文档对齐） | code scan 2026-11-27 |
 
 ## §10 DIAGNOSIS 2026-10-30 — ACI re-audit + gap list (Phase-2 field rounds)
 

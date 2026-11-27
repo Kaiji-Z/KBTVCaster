@@ -14,7 +14,7 @@ I manage KBTVCaster versions throughout the development lifecycle:
 
 - **Version determination**: Analyze changes since the last tag, suggest a SemVer bump
 - **Release execution**: Drive `scripts/release.sh` (repo root), which bumps `versionName`/`versionCode`, writes the changelog, commits, tags, and pushes
-- **CI-built releases**: Pushing a `v*` tag triggers `.github/workflows/release.yml`, which builds both APK variants and publishes them to a GitHub Release — no local APK builds, no local tarball archives
+- **CI-built releases**: Pushing a `v*` tag triggers `.github/workflows/release.yml`, which builds the three signed APK variants (default / airplay / playerMenu) and publishes them to a GitHub Release — no local APK builds, no local tarball archives
 - **Rollback**: Guide checkout/reset to a previous tag
 
 ## When to Use Me
@@ -45,8 +45,10 @@ I manage KBTVCaster versions throughout the development lifecycle:
      ├─ assembleRelease          → app-release.apk        (DLNA 稳定版)
      ├─ assembleRelease -Pkbtv.flags.airplay=true
                                  → app-release-airplay.apk (实验性镜像)
-     └─ 两个 APK 均以 GitHub Secrets 中的密钥正式签名并过 apksigner 校验
-     └─ GitHub Release: changelog as body + auto notes + both APKs
+     ├─ assembleRelease -Pkbtv.flags.playerMenu=true
+                                 → app-release-menu.apk   (播放器菜单)
+     └─ 三个 APK 均以 GitHub Secrets 中的密钥正式签名并过 apksigner 校验
+     └─ GitHub Release: changelog as body + auto notes + all three APKs
 6. Verify: gh run watch --workflow=release.yml, then gh release view vX.Y.Z
 ```
 
@@ -110,7 +112,7 @@ System:
   $ scripts/release.sh 0.3.0
   ... (commits, tags v0.3.0, pushes; CI builds APKs)
   $ gh run watch --workflow=release.yml
-  ✅ Release v0.3.0 live with app-release.apk + app-release-airplay.apk
+  ✅ Release v0.3.0 live with app-release.apk + app-release-airplay.apk + app-release-menu.apk
 ```
 
 ## Output Format

@@ -10,10 +10,11 @@ scripts/release.sh X.Y.Z
        └─ .github/workflows/release.yml (on: push tags v*)
             ├─ assembleRelease (KBTV_KEYSTORE_* env)      → app-release.apk
             ├─ assembleRelease -Pkbtv.flags.airplay=true  → app-release-airplay.apk
+            ├─ assembleRelease -Pkbtv.flags.playerMenu=true → app-release-menu.apk
             └─ softprops/action-gh-release@v2
                  ├─ body: releases/vX.Y.Z/VERSION_vX.Y.Z.md (project changelog)
                  ├─ generate_release_notes: true (GitHub commit notes appended)
-                 └─ files: both APKs
+                 └─ files: all three APKs
 ```
 
 ## Requirements
