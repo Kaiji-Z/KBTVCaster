@@ -72,7 +72,7 @@ class KbtvNetworkAddressFactory(streamListenPort: Int) :
         if (com.kbtv.caster.BuildConfig.DEBUG) {
             android.util.Log.w(
                 "KbtvNet",
-                "factory ready: relaxed=$relaxed ifaces=${networkInterfaces.joinToString { it.name }} binds=${bindAddresses.joinToString { it.hostAddress }}"
+                "factory ready: relaxed=$relaxed ifaces=${networkInterfaces.joinToString { it.name }} binds=${bindAddresses.joinToString { it.hostAddress ?: "?" }}"
             )
         }
     }

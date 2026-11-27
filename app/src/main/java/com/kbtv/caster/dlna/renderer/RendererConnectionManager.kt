@@ -7,12 +7,11 @@ import timber.log.Timber
 /**
  * ConnectionManager:1 service declaring the sink (playable) protocol list.
  *
- * Real control points (Baidu Netdisk via the [vendor] SDK — measured 2026-10-13,
- * see docs/research/baidu-layer-2026-10.md) match candidates against
- * SinkProtocolInfo *including the DLNA.ORG_PN profile field*; a bare-MIME
- * list reads as "cannot play" and the push never arrives. The universal
- * wildcard entry covers sloppy matchers, and ExoPlayer handles every format
- * listed here.
+ * Real control points (Baidu Netdisk's SDK-based push, measured 2026-10-13)
+ * match candidates against SinkProtocolInfo *including the DLNA.ORG_PN
+ * profile field*; a bare-MIME list reads as "cannot play" and the push never
+ * arrives. The universal wildcard entry covers sloppy matchers, and ExoPlayer
+ * handles every format listed here.
  */
 class RendererConnectionManager : ConnectionManagerService() {
 

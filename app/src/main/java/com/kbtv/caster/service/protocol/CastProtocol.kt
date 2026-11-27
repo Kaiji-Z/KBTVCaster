@@ -10,9 +10,9 @@ import android.net.Uri
  * commands from a sender device, and translates them into [PlaybackCommand]s
  * forwarded to the shared ExoPlayer owned by CastCoordinatorService.
  *
- * Implementations: [DlnaProtocol]. A future mirror protocol (e.g. a companion
- * App streaming via MediaProjection) would plug in here without the service
- * knowing its transport details.
+ * Implementations: [DlnaProtocol], plus the flag-gated AirPlayMirrorProtocol.
+ * New protocols plug in here without the service knowing their transport
+ * details.
  */
 interface CastProtocol {
 
