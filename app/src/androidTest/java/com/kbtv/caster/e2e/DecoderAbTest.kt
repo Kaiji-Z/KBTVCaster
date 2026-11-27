@@ -6,6 +6,7 @@ import android.view.Surface
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -147,7 +148,7 @@ class DecoderAbTest {
     fun ptsSensitivity() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val dumpFile = java.io.File(ctx.filesDir, "trace/mirror-dump.h264")
-        assertTrue("mirror dump missing — connect a mirror session first", dumpFile.isFile)
+        assumeTrue("mirror dump missing — connect a mirror session first", dumpFile.isFile)
         val dump = dumpFile.readBytes()
         val nals = parseNals(dump)
         val small = runVariant("pts-small", dump, nals, "OMX.MS.AVC.Decoder",
@@ -230,7 +231,7 @@ class DecoderAbTest {
     fun findWorkingRecipe() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val dumpFile = java.io.File(ctx.filesDir, "trace/mirror-dump.h264")
-        assertTrue("mirror dump missing — connect a mirror session first", dumpFile.isFile)
+        assumeTrue("mirror dump missing — connect a mirror session first", dumpFile.isFile)
         val dump = dumpFile.readBytes()
         val nals = parseNals(dump)
         android.util.Log.i("DecoderAb", "dump=${dump.size}B nals=${nals.size}")

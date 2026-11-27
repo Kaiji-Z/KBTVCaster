@@ -31,9 +31,11 @@ class FlipStreamReproTest {
     fun rendererSurvivesResolutionFlips() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val dumpFile = File(ctx.filesDir, "trace/mirror-dump.h264")
-        assertTrue("mirror dump missing — cast once first", dumpFile.isFile)
+        // Skip (not fail) on devices without a recorded session — the repro
+        // needs live dump bytes; a fresh install has none.
+        assumeTrue("mirror dump missing — cast once first", dumpFile.isFile)
         val dump = dumpFile.readBytes()
-        assertTrue("dump too small: ${dump.size}", dump.size > 100_000)
+        assumeTrue("dump too small: ${dump.size}", dump.size > 100_000)
 
         // --- split dump into NALs (same algorithm family as the renderer) ---
         val nalBounds = ArrayList<Pair<Int, Int>>()

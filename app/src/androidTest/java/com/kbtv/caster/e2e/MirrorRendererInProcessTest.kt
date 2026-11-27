@@ -3,6 +3,7 @@ package com.kbtv.caster.e2e
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import timber.log.Timber
@@ -29,9 +30,10 @@ class MirrorRendererInProcessTest {
         Timber.plant(object : Timber.DebugTree() {})
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val dumpFile = File(ctx.filesDir, "trace/mirror-dump.h264")
-        assertTrue("mirror dump missing — connect a mirror session first", dumpFile.isFile)
+        // Skip (not fail) on devices without a recorded session.
+        assumeTrue("mirror dump missing — connect a mirror session first", dumpFile.isFile)
         val dump = dumpFile.readBytes()
-        assertTrue("dump too small: ${dump.size}", dump.size > 100_000)
+        assumeTrue("dump too small: ${dump.size}", dump.size > 100_000)
 
         // --- split dump into NALs (same algorithm family as the renderer) ---
         val nalBounds = ArrayList<Pair<Int, Int>>() // (start, end)
@@ -145,7 +147,7 @@ class MirrorRendererInProcessTest {
     fun bisectCreationPath() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val dumpFile = File(ctx.filesDir, "trace/mirror-dump.h264")
-        assertTrue("mirror dump missing", dumpFile.isFile)
+        assumeTrue("mirror dump missing", dumpFile.isFile)
         val dump = dumpFile.readBytes()
         val nalBounds = ArrayList<Pair<Int, Int>>()
         var i = 0
@@ -255,7 +257,9 @@ class MirrorRendererInProcessTest {
     @Test
     fun probeFirstNals() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
-        val dump = File(ctx.filesDir, "trace/mirror-dump.h264").readBytes()
+        val dumpFile = File(ctx.filesDir, "trace/mirror-dump.h264")
+        assumeTrue("mirror dump missing", dumpFile.isFile)
+        val dump = dumpFile.readBytes()
         val bounds = ArrayList<Pair<Int, Int>>()
         var i = 0
         while (i + 3 < dump.size) {
