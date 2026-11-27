@@ -6,8 +6,9 @@
 # Flow (see .opencode/skills/kbtv-versioning/ for conventions):
 #   preflight -> bump versionName/versionCode -> require changelog
 #   -> release commit -> annotated tag -> push master + tag.
-# Pushing the v* tag triggers .github/workflows/release.yml, which builds
-# both APK variants and publishes them to a GitHub Release.
+# Pushing the v* tag triggers .github/workflows/release.yml, which builds the
+# signed release APK variants (default / airplay / playerMenu) and publishes
+# them to a GitHub Release.
 
 set -euo pipefail
 

@@ -9,7 +9,8 @@
 # CMake IMPORTED targets (same pattern as app/libs jars for Cling).
 #
 # Configuration replicated from third_party/openssl-cmake BuildOpenSSL.cmake:
-#   targets android-arm64 / android-x86_64, -D__ANDROID_API__=23 (app minSdk),
+#   targets android-arm / android-arm64 / android-x86 / android-x86_64 (all
+#   four ABIs the app builds), -D__ANDROID_API__=23 (app minSdk),
 #   openssl 3.4.4, module set "no-cast no-md2 no-md4 no-mdc2 no-rc4 no-rc5
 #   no-engine no-idea no-camellia no-ssl3 no-heartbeats no-gost no-deprecated
 #   no-capieng no-comp no-dtls no-psk no-srp no-dso no-dsa no-rc2 no-des
@@ -55,4 +56,5 @@ build() { # $1=openssl-target $2=abi-dir
 if [ -z "${3:-}" ] || [ "$3" = "armeabi-v7a" ]; then build android-arm armeabi-v7a; fi
 if [ -z "${3:-}" ] || [ "$3" = "arm64-v8a" ]; then build android-arm64 arm64-v8a; fi
 if [ -z "${3:-}" ] || [ "$3" = "x86_64" ]; then build android-x86_64 x86_64; fi
+if [ -z "${3:-}" ] || [ "$3" = "x86" ]; then build android-x86 x86; fi
 echo "ALL DONE"

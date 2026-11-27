@@ -23,7 +23,7 @@ import struct
 import sys
 
 
-def query(name: bytes, timeout: float) -> bytes:
+def query(name: bytes, timeout: float, host: str = "224.0.0.251") -> bytes:
     """One PTR query; returns the (possibly empty) answer payload."""
     pkt = b"\x00\x00\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00"  # query, RD, 1 question
     for label in (b"_airplay", b"_tcp", b"local"):
@@ -33,7 +33,7 @@ def query(name: bytes, timeout: float) -> bytes:
     sock.settimeout(timeout)
     payloads = []
     try:
-        sock.sendto(pkt, ("224.0.0.251", 5353))
+        sock.sendto(pkt, (host, 5353))
         # several responders may answer the same query (this LAN also runs a
         # bundled 乐播-based receiver): collect them all, first within timeout
         deadline = time.time() + timeout
@@ -51,13 +51,15 @@ def query(name: bytes, timeout: float) -> bytes:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--host", default="224.0.0.251",
+                    help="multicast group to query (default 224.0.0.251)")
     ap.add_argument("--name", default="KBTVCaster")
     ap.add_argument("--timeout", type=float, default=4.0)
     args = ap.parse_args()
 
     want = args.name.encode("ascii")
     try:
-        data = query(want, args.timeout)
+        data = query(want, args.timeout, args.host)
     except socket.timeout:
         print("FAIL no mDNS answer within timeout (receiver invisible or network blocked)")
         return 2

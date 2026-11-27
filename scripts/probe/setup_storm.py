@@ -195,7 +195,7 @@ def main() -> int:
     if failures:
         print(f"RESULT FAIL {failures} SETUP errors")
         return 1
-    print(f"RESULT PASS {sent} same-conn SETups, stack answered throughout")
+    print(f"RESULT PASS {sent} same-conn SETUPs, stack answered throughout")
     return 0
 
 
