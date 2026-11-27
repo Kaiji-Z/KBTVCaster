@@ -41,13 +41,21 @@ LAST_TAG=$(git describe --abbrev=0 2>/dev/null || true)
 if [ -n "$LAST_TAG" ]; then RANGE="$LAST_TAG..HEAD"; else RANGE="HEAD"; fi
 
 # ---------- version bump ----------
-OLD_CODE=$(grep -m1 'versionCode' "$GRADLE" | grep -o '[0-9][0-9]*')
-NEW_CODE=$((OLD_CODE + 1))
-sed -i "s/versionName = \"[0-9.]*\"/versionName = \"$VERSION\"/" "$GRADLE"
-sed -i "s/versionCode = $OLD_CODE/versionCode = $NEW_CODE/" "$GRADLE"
-grep -q "versionName = \"$VERSION\"" "$GRADLE" || die "failed to bump versionName in $GRADLE"
-grep -q "versionCode = $NEW_CODE" "$GRADLE" || die "failed to bump versionCode in $GRADLE"
-echo "Bumped $GRADLE: versionName=$VERSION versionCode=$NEW_CODE (was code $OLD_CODE)"
+# Idempotent across the two-run scaffold flow: the second run must not bump
+# again, or every release skips a versionCode (all releases up to v0.6.0
+# shipped code+2 for exactly this reason).
+CUR_NAME=$(grep -m1 'versionName' "$GRADLE" | grep -o '[0-9][0-9.]*')
+if [ "$CUR_NAME" != "$VERSION" ]; then
+  OLD_CODE=$(grep -m1 'versionCode' "$GRADLE" | grep -o '[0-9][0-9]*')
+  NEW_CODE=$((OLD_CODE + 1))
+  sed -i "s/versionName = \"[0-9.]*\"/versionName = \"$VERSION\"/" "$GRADLE"
+  sed -i "s/versionCode = $OLD_CODE/versionCode = $NEW_CODE/" "$GRADLE"
+  grep -q "versionName = \"$VERSION\"" "$GRADLE" || die "failed to bump versionName in $GRADLE"
+  grep -q "versionCode = $NEW_CODE" "$GRADLE" || die "failed to bump versionCode in $GRADLE"
+  echo "Bumped $GRADLE: versionName=$VERSION versionCode=$NEW_CODE (was code $OLD_CODE)"
+else
+  echo "versionName already $VERSION — no bump (rerun of the scaffold flow)"
+fi
 
 # ---------- changelog ----------
 if [ ! -f "$CHANGELOG" ]; then
