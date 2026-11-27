@@ -24,7 +24,7 @@ import java.security.MessageDigest
  *
  * Replaces the Kotlin-only AirPlayProtocol URL-push surface under the same
  * kbtv.flags.airplay gate; URL pushes arrive here as [RaopCallbackHandler.onVideoPlay]
- * and flow into the coordinator's PlaybackPlan path unchanged.
+ * and flow into the coordinator's playback routing (PlaybackPlan when that flag is on).
  */
 class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssun.airplay.bridge.LogListener {
 
@@ -96,7 +96,8 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
             // request"). Must run BEFORE nativeStart: the shim snapshots the
             // TXT records (incl. features bits 0/4) when registering inside
             // start, and later feature updates never reach the cached TXT.
-            val traceDir = java.io.File(appContext.filesDir, "trace").apply { mkdirs() }
+            // ensure the trace dir exists before the warmup/dump paths need it
+            java.io.File(appContext.filesDir, "trace").mkdirs()
             NativeBridge.nativeSetHlsEnabled(handle, true)
             val port = NativeBridge.nativeStart(handle, PORT)
             if (port < 0) {
@@ -352,7 +353,10 @@ class AirPlayMirrorProtocol : CastProtocol, RaopCallbackHandler, io.github.jqssu
                 context, com.kbtv.caster.service.CastCoordinatorService::class.java,
             ).setAction(com.kbtv.caster.service.CastCoordinatorService.ACTION_START)
             val pi = android.app.PendingIntent.getService(
-                context, 1001, intent, android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+                context, 1001, intent,
+                // FLAG_IMMUTABLE is mandatory on API 31+; without it getService
+                // throws and the process-restart alarm never gets scheduled.
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
             )
             val am = context.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
             am.setExact(
