@@ -60,7 +60,7 @@ android {
     val ksKeyPassword = (project.findProperty("kbtv.signing.keyPassword") as? String)
         ?: System.getenv("KBTV_KEY_PASSWORD")
     val ksAvailable = ksPath != null && ksStorePassword != null && ksKeyAlias != null &&
-        ksKeyPassword != null && file(ksPath!!).exists()
+        ksKeyPassword != null && file(ksPath).exists()
 
     signingConfigs {
         if (ksAvailable) {
@@ -80,6 +80,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // FLAG_INJECTOR_BYPASS is debug-only by contract: pin it off here so
+            // -Pkbtv.flags.injector=true can never put the plaintext mirror
+            // bypass in a release build (buildType fields override defaultConfig).
+            buildConfigField("boolean", "FLAG_INJECTOR_BYPASS", "false")
             if (ksAvailable) signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -91,7 +95,6 @@ android {
 
     kotlinOptions {
         jvmTarget = "11"
-        freeCompilerArgs = listOf("-Xallow-any-scripts-in-source")
     }
 
     buildFeatures {
@@ -129,21 +132,15 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 
-    // Lifecycle
+    // Lifecycle (no ViewModel / LifecycleService is used; LiveData arrives
+    // transitively via the AndroidX stack)
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-service:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
 
-    // Activity & Fragment
+    // Version-alignment pins: no first-party code imports fragment/activity,
+    // but without these the transitive versions drop (fragment 1.6.2 → 1.3.6,
+    // activity 1.8.2 → 1.8.0), silently downgrading what ships in the APK.
     implementation("androidx.activity:activity-ktx:1.8.2")
     implementation("androidx.fragment:fragment-ktx:1.6.2")
-
-    // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-
-    // Network - for HTTP server
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // Logging
     implementation("com.jakewharton.timber:timber:5.0.1")
@@ -171,7 +168,6 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.mockito:mockito-core:5.8.0")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
 
     // AndroidX Test
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
