@@ -17,11 +17,6 @@ import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.BufferedOutputStream
-import java.io.BufferedReader
-import java.io.File
-import java.net.InetAddress
-import java.net.ServerSocket
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -47,12 +42,12 @@ class DlnaE2eTest {
         get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     private var connection: ServiceConnection? = null
-    private var httpServer: SingleFileHttpServer? = null
+    private var mediaServer: TestMediaServer? = null
 
     @After
     fun tearDown() {
-        httpServer?.stop()
-        httpServer = null
+        mediaServer?.stop()
+        mediaServer = null
         connection?.let { context.unbindService(it) }
         connection = null
         context.startService(
@@ -65,8 +60,7 @@ class DlnaE2eTest {
     // SimpleNames for this minSdk (JVM unit tests keep the backtick-word style).
     @Test
     fun `sinkPlayShouldDriveExoPlayerToReadyAndIsPlaying`() {
-        val wav = File(context.cacheDir, "e2e-test.wav").also { writeTestWav(it) }
-        val server = SingleFileHttpServer(wav).also { httpServer = it }.start()
+        val server = TestMediaServer(context).also { mediaServer = it }.start()
 
         val service = startAndBindService()
         awaitStatus(service, CastCoordinatorService.ServiceStatus.RUNNING)
@@ -198,84 +192,5 @@ class DlnaE2eTest {
         val ok = reached.await(timeoutSec, TimeUnit.SECONDS)
         instrumentation.runOnMainSync { service.serviceStatus.removeObserver(observer) }
         assertTrue("serviceStatus never reached $expected within ${timeoutSec}s", ok)
-    }
-
-    /** 3s of 440 Hz mono 16-bit PCM at 8 kHz — trivially valid, deterministic. */
-    private fun writeTestWav(file: File, seconds: Int = 3, sampleRate: Int = 8000) {
-        val samples = seconds * sampleRate
-        val dataLen = samples * 2
-        BufferedOutputStream(file.outputStream()).use { out ->
-            fun le16(v: Int) = byteArrayOf((v and 0xff).toByte(), (v shr 8 and 0xff).toByte())
-            fun le32(v: Int) = byteArrayOf(
-                (v and 0xff).toByte(), (v shr 8 and 0xff).toByte(),
-                (v shr 16 and 0xff).toByte(), (v shr 24 and 0xff).toByte()
-            )
-            out.write("RIFF".toByteArray()); out.write(le32(36 + dataLen)); out.write("WAVE".toByteArray())
-            out.write("fmt ".toByteArray()); out.write(le32(16)); out.write(le16(1)); out.write(le16(1))
-            out.write(le32(sampleRate)); out.write(le32(sampleRate * 2)); out.write(le16(2)); out.write(le16(16))
-            out.write("data".toByteArray()); out.write(le32(dataLen))
-            val frame = ByteArray(2)
-            for (i in 0 until samples) {
-                val v = (Math.sin(2.0 * Math.PI * 440.0 * i / sampleRate) * 12000).toInt()
-                frame[0] = (v and 0xff).toByte()
-                frame[1] = (v shr 8 and 0xff).toByte()
-                out.write(frame)
-            }
-        }
-    }
-
-    /** Serves one file on 127.0.0.1 across sequential connections — enough HTTP for a progressive test stream.
-     *  Bind explicitly to IPv4: InetAddress.getLoopbackAddress() resolves to ::1 on some
-     *  emulator images, and clients connecting to 127.0.0.1 then get ECONNREFUSED. */
-    private class SingleFileHttpServer(private val file: File) {
-        private val server = ServerSocket(
-            0, 4,
-            InetAddress.getByName("127.0.0.1")
-        )
-        private var thread: Thread? = null
-
-        fun start(): SingleFileHttpServer {
-            thread = Thread({
-                while (!server.isClosed) {
-                    try {
-                        server.accept().use { socket -> serve(socket) }
-                    } catch (_: Exception) {
-                        // server closed or client hiccup — loop or exit quietly
-                    }
-                }
-            }, "e2e-http").apply {
-                isDaemon = true
-            }.also { it.start() }
-            return this
-        }
-
-        private fun serve(socket: java.net.Socket) {
-            val reader: BufferedReader = socket.getInputStream().bufferedReader()
-            reader.readLine() ?: return
-            while (true) {
-                val line = reader.readLine() ?: break
-                if (line.isEmpty()) break
-            }
-            val bytes = file.readBytes()
-            val head = "HTTP/1.1 200 OK\r\n" +
-                "Content-Type: audio/wav\r\n" +
-                "Content-Length: ${bytes.size}\r\n" +
-                "Connection: close\r\n\r\n"
-            socket.getOutputStream().use { os ->
-                os.write(head.toByteArray(Charsets.US_ASCII))
-                os.write(bytes)
-                os.flush()
-            }
-        }
-
-        fun url(): String = "http://127.0.0.1:${server.localPort}/test.wav"
-
-        fun mediaServerPort(): Int = server.localPort
-
-        val isRunning: Boolean get() = !server.isClosed
-
-        fun stop() {
-            try { server.close() } catch (_: Exception) {}
-        }
     }
 }

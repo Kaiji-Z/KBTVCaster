@@ -38,6 +38,11 @@ class TestMediaServer(context: Context) {
 
     fun url(): String = "http://127.0.0.1:${server.localPort}/cast-test.wav"
 
+    /** Port for the self-probe (distinguish a dead server from a player failure). */
+    fun mediaServerPort(): Int = server.localPort
+
+    val isRunning: Boolean get() = !server.isClosed
+
     fun stop() {
         try { server.close() } catch (_: Exception) {}
     }
