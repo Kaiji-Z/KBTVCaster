@@ -84,6 +84,11 @@ android {
             // -Pkbtv.flags.injector=true can never put the plaintext mirror
             // bypass in a release build (buildType fields override defaultConfig).
             buildConfigField("boolean", "FLAG_INJECTOR_BYPASS", "false")
+            // One full-featured release APK (user decision 2026-11-27): ship
+            // airplay + playerMenu together instead of variant APKs — the -P
+            // overrides only shape debug/CI test states.
+            buildConfigField("boolean", "FLAG_AIRPLAY_PROTOCOL", "true")
+            buildConfigField("boolean", "FLAG_PLAYER_MENU", "true")
             if (ksAvailable) signingConfig = signingConfigs.getByName("release")
         }
     }

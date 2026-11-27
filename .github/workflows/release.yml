@@ -1,9 +1,11 @@
 name: release
 
 # Tag-driven release: push a v* tag (scripts/release.sh does this) and CI
-# builds all signed release APK variants and attaches them to a GitHub
-# Release. Signing key is delivered via secrets (KBTV_KEYSTORE_BASE64,
+# builds the single signed full-featured release APK and attaches it to a
+# GitHub Release. Signing key is delivered via secrets (KBTV_KEYSTORE_BASE64,
 # KBTV_KEYSTORE_PASSWORD, KBTV_KEY_ALIAS, KBTV_KEY_PASSWORD).
+# Release builds force FLAG_AIRPLAY_PROTOCOL + FLAG_PLAYER_MENU on
+# (app/build.gradle.kts release buildType), so one APK ships everything.
 on:
   push:
     tags: ['v*']
@@ -13,7 +15,7 @@ permissions:
 
 jobs:
   apk:
-    name: Build signed APKs and publish GitHub Release
+    name: Build signed APK and publish GitHub Release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,45 +30,18 @@ jobs:
       - name: Decode signing key
         run: echo "${{ secrets.KBTV_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/kbtv.keystore"
 
-      # Both variants land at the same output path, so each is copied aside
-      # right after its build.
-      - name: Build release APK (default flags)
+      - name: Build release APK
         env:
           KBTV_KEYSTORE_PATH: ${{ runner.temp }}/kbtv.keystore
           KBTV_KEYSTORE_PASSWORD: ${{ secrets.KBTV_KEYSTORE_PASSWORD }}
           KBTV_KEY_ALIAS: ${{ secrets.KBTV_KEY_ALIAS }}
           KBTV_KEY_PASSWORD: ${{ secrets.KBTV_KEY_PASSWORD }}
-        run: |
-          ./gradlew assembleRelease --console=plain
-          mkdir -p out
-          cp app/build/outputs/apk/release/app-release.apk out/app-release.apk
+        run: ./gradlew assembleRelease --console=plain
 
-      - name: Build release APK (experimental mirror)
-        env:
-          KBTV_KEYSTORE_PATH: ${{ runner.temp }}/kbtv.keystore
-          KBTV_KEYSTORE_PASSWORD: ${{ secrets.KBTV_KEYSTORE_PASSWORD }}
-          KBTV_KEY_ALIAS: ${{ secrets.KBTV_KEY_ALIAS }}
-          KBTV_KEY_PASSWORD: ${{ secrets.KBTV_KEY_PASSWORD }}
-        run: |
-          ./gradlew assembleRelease -Pkbtv.flags.airplay=true --console=plain
-          cp app/build/outputs/apk/release/app-release.apk out/app-release-airplay.apk
-
-      - name: Build release APK (player menu)
-        env:
-          KBTV_KEYSTORE_PATH: ${{ runner.temp }}/kbtv.keystore
-          KBTV_KEYSTORE_PASSWORD: ${{ secrets.KBTV_KEYSTORE_PASSWORD }}
-          KBTV_KEY_ALIAS: ${{ secrets.KBTV_KEY_ALIAS }}
-          KBTV_KEY_PASSWORD: ${{ secrets.KBTV_KEY_PASSWORD }}
-        run: |
-          ./gradlew assembleRelease -Pkbtv.flags.playerMenu=true --console=plain
-          cp app/build/outputs/apk/release/app-release.apk out/app-release-menu.apk
-
-      - name: Verify APK signatures
+      - name: Verify APK signature
         run: |
           APKSIGNER=$(ls "$ANDROID_HOME/build-tools/"*/apksigner | sort -V | tail -1)
-          "$APKSIGNER" verify out/app-release.apk
-          "$APKSIGNER" verify out/app-release-airplay.apk
-          "$APKSIGNER" verify out/app-release-menu.apk
+          "$APKSIGNER" verify app/build/outputs/apk/release/app-release.apk
 
       # releases/<tag>/VERSION_<tag>.md is the project changelog; GitHub's
       # auto-generated notes get appended after it.
@@ -81,4 +56,4 @@ jobs:
         with:
           body_path: ${{ steps.changelog.outputs.path }}
           generate_release_notes: true
-          files: out/*.apk
+          files: app/build/outputs/apk/release/app-release.apk
