@@ -204,7 +204,7 @@ A feature is done if and only if ALL hold:
   `adb shell run-as com.kbtv.caster cat files/trace/cast.jsonl` (TraceRecorder.kt:19, structured JSONL, persists across reboots — field-proven 2026-10-26/29 forensics). Live audio-engine counters: `NativeBridge.nativeServerAudioStats` (native_bridge.cpp:438-443). Protocol health: RTSP OPTIONS probe against port 7000（已入库 scripts/probe/rtsp_health.py，另有 reconnect_hammer / setup_storm / mirror_inject / mdns_query / assert_session）.
 
 ### 8.2 Test infra [auto-fill] — REFRESHED 2026-10-30 (Phase-2 field rounds)
-- Regression run command: `./gradlew test`（本机 wrapper 损坏，改用缓存 8.14.3 直调，见 .goal/SPEC.md §6）；三旗态：默认 / `-Pkbtv.flags.playbackPlan=true` / `-Pkbtv.flags.airplay=true`
+- Regression run command: `./gradlew test`（wrapper 已统一 8.14.3，2026-11-27 修复 8.7 残缺下载）；四旗态：默认 / `-Pkbtv.flags.playbackPlan=true` / `-Pkbtv.flags.airplay=true` / `-Pkbtv.flags.playerMenu=true`
 - Regression set directory: `app/src/test/java/com/kbtv/caster/` — 78 tests @ `@Test` across 8 files（2026-11-27 审计重整：删除死代码 Kotlin AirPlay 实现 4 文件及其 27 个测试、占位 MediaUriTest 7 个、vendored 枚举断言 TransportStateTest 8 个；新增 RendererPlayerTest 19 用例真实覆盖净室 DMR 状态机）
 - Instrumented: `app/src/androidTest/java/com/kbtv/caster/e2e/` — 9 files (DlnaE2eTest, AirPlayE2eTest, MirrorDecodePathTest, MirrorRenderPathTest, MirrorRendererInProcessTest, DecoderAbTest, GlDisplayDrawTest, AudioPipelineProbeTest, TestMediaServer)。真机（SHARP Android 6）实测可跑：DecoderAbTest 控制实验 622/733 帧、AudioPipelineProbeTest sine+AAC 探针
 - Host-side control-point simulator: `app/src/androidTest/assets/controlpoint/dlna_control_point.py`（stdlib-only；trace 取 UDN+描述符路径 → /proc 端口枚举 + adb forward → 描述符 200 → SOAP SetAVTransportURI/Play（SOAPACTION 需双引号）→ trace 断言 play_started）

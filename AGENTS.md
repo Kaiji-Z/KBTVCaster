@@ -28,7 +28,7 @@ Android TV **投屏接收端**：DLNA（基于 Cling UPnP 栈的 MediaRenderer�
 adb logcat -s "CastCoordinator:*" "Timber:*" "KbtvNet:*"  # Debug log filter
 ```
 
-**Build:** AGP 8.5.0, Kotlin 1.9.24, Gradle 8.7, JDK 11+, compileSdk 34, minSdk 23.
+**Build:** AGP 8.5.0, Kotlin 1.9.24, Gradle 8.14.3 (wrapper), JDK 11+, compileSdk 34, minSdk 23.
 
 ## ARCHITECTURE
 

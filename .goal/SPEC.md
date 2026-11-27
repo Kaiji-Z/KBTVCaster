@@ -95,7 +95,7 @@ RTSP 全 200、NTP 52-167ms 零校正、音频解码零错、对 UxPlay master �
 
 ## 5. 已知坑（继承 Phase 1/2 全部 + 新增）
 
-- Gradle 缓存直调：`cmd //c "C:\Users\kaiji\.gradle\wrapper\dists\gradle-8.14.3-all\57ojdfz2de3j9gyous0kn3uiu\gradle-8.14.3\bin\gradle.bat" <task>`
+- Gradle：wrapper 已统一 8.14.3（2026-11-27 修复 8.7 残缺下载），`./gradlew` 直接用；缓存直调兜底：`cmd //c "C:\Users\kaiji\.gradle\wrapper\dists\gradle-8.14.3-all\57ojdfz2de3j9gyous0kn3uiu\gradle-8.14.3\bin\gradle.bat" <task>`
 - **heredoc 吃反斜杠**：多行代码补丁必须走 Write/Edit/写 .py 补丁脚本，禁止 bash heredoc 内嵌代码（本会话两次翻车：补丁自吞 + Kotlin 转义）
 - **git apply 不落盘**：补丁用 python 字符串替换（assert old in s）+ 落盘后 grep 复核
 - C:=D: junction；Git Bash adb 路径要 `//` 前缀；pty 会损坏 shell cat 二进制
