@@ -215,6 +215,8 @@ class MainActivity : AppCompatActivity() {
                     R.string.service_running to 0xFF7BD88F.toInt()
                 CastCoordinatorService.ServiceStatus.ERROR ->
                     R.string.service_error to 0xFFFF7A74.toInt()
+                CastCoordinatorService.ServiceStatus.STOPPED ->
+                    R.string.service_stopped to 0xFF9A9AA2.toInt()
                 else -> R.string.starting_service to 0xFFE8C46B.toInt()
             }
             standbyStatus.setText(textRes)
@@ -510,22 +512,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun adjustVolume(delta: Int) {
-        coordinatorService?.let { service ->
-            try {
-                val audioManager = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
-                val currentVolume = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
-                val maxVolume = audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
-                val newVolume = if (delta == -100) {
-                    0
-                } else {
-                    (currentVolume + delta * maxVolume / 20).coerceIn(0, maxVolume)
-                }
-                // FLAG_SHOW_UI 显示系统音量UI
-                audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, newVolume, android.media.AudioManager.FLAG_SHOW_UI)
-                Timber.d("Volume: $newVolume/$maxVolume")
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to adjust volume")
+        try {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+            val currentVolume = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+            val maxVolume = audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+            val newVolume = if (delta == -100) {
+                0
+            } else {
+                (currentVolume + delta * maxVolume / 20).coerceIn(0, maxVolume)
             }
+            // FLAG_SHOW_UI 显示系统音量UI
+            audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, newVolume, android.media.AudioManager.FLAG_SHOW_UI)
+            Timber.d("Volume: $newVolume/$maxVolume")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to adjust volume")
         }
     }
 
