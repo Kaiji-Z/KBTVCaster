@@ -12,7 +12,7 @@ set(UXPLAY_LIB third_party/UxPlay/lib)
 # ---------- OpenSSL (prebuilt cross-compiled; see scripts/build-openssl-wsl.sh) ----------
 # Host-side source build (openssl-cmake) requires a Unix host; these static
 # libs were cross-built once with the Linux NDK in WSL:
-#   arm64-v8a + x86_64, openssl 3.4.4, -D__ANDROID_API__=23, module set of
+#   all four ABIs, openssl 3.4.4, -D__ANDROID_API__=23, module set of
 #   upstream BuildOpenSSL.cmake (no-cast ... no-des no-tests no-hw).
 set(KBTV_OPENSSL_PREBUILT ${CMAKE_CURRENT_SOURCE_DIR}/prebuilt/openssl/${ANDROID_ABI})
 if(NOT EXISTS ${KBTV_OPENSSL_PREBUILT}/lib/libcrypto.a)
@@ -22,7 +22,6 @@ add_library(crypto STATIC IMPORTED)
 set_target_properties(crypto PROPERTIES
     IMPORTED_LOCATION ${KBTV_OPENSSL_PREBUILT}/lib/libcrypto.a
     INTERFACE_INCLUDE_DIRECTORIES ${KBTV_OPENSSL_PREBUILT}/include)
-list(PREPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 # ---------- Sanitizers (opt-in via -DSANITIZE=ON) ----------
 # OpenSSL uninstrumented; HWASan is arm64-only
@@ -38,10 +37,10 @@ if(SANITIZE)
     add_link_options(${SANITIZE_LDFLAGS})
 endif()
 
-# ---------- Audio: oboe (prefab AAR) + ffmpeg (prebuilt, ALAC soft decode) ----------
+# ---------- Audio: oboe (prefab AAR) + ffmpeg (prebuilt, ALAC + AAC soft decode) ----------
 # ffmpeg cross-built once in WSL (scripts/build-ffmpeg-wsl.sh) with the same
 # configure as upstream cmake/BuildFFmpeg.cmake: --disable-all
-# --enable-avcodec --enable-decoder=alac, pinned to the upstream submodule
+# --enable-avcodec --enable-decoder=alac,aac, pinned to the upstream submodule
 # commit (LGPL subset). Consumed via IMPORTED targets like OpenSSL above.
 find_package(oboe REQUIRED CONFIG)
 set(KBTV_FFMPEG_PREBUILT ${CMAKE_CURRENT_SOURCE_DIR}/prebuilt/ffmpeg/${ANDROID_ABI})

@@ -217,7 +217,6 @@ static void _display_pin(void *cls, char *pin) {
 }
 
 /* Stubs for less critical callbacks */
-static void _noop(void *cls) { (void)cls; }
 static void _video_pause(void *cls) {
     android_callback_ctx_t *ctx = (android_callback_ctx_t *)cls;
     LOGI("video_pause");

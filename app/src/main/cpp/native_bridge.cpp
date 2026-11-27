@@ -16,9 +16,6 @@ extern "C" {
 #include "pairing.h"
 #include "android_raop_callbacks.h"
 #include "android_dnssd_shim.h"
-#ifdef __ANDROID__
-/* defined in vendored raop_rtp_mirror.c (field probe) */
-#endif
 }
 
 #include "audio_engine.h"
@@ -311,20 +308,6 @@ Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeSetPlist(
     env->ReleaseStringUTFChars(key, key_c);
 }
 
-extern "C"
-JNIEXPORT void JNICALL
-Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeSetH265Enabled(
-        JNIEnv *env, jobject thiz, jlong handle, jboolean enabled) {
-
-    server_ctx_t *ctx = (server_ctx_t *)(intptr_t)handle;
-    if (!ctx) return;
-    ctx->cb_ctx.h265_enabled = enabled ? 1 : 0;
-    /* Set DNS-SD feature bit 42 (SupportsScreenMultiCodec) for H265 */
-    if (ctx->dnssd) {
-        dnssd_set_airplay_features(ctx->dnssd, 42, enabled ? 1 : 0);
-    }
-}
-
 /* hls plist gates raop.c's hls support (CSeq-less /play acceptance).
  * Deliberately NOT advertised as dns-sd feature bits 0/4: those bits make
  * modern iOS negotiate a newer FairPlay handshake (challenge type != 0x03)
@@ -465,18 +448,6 @@ Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeServerAudioStats(
     if (!ctx || !ctx->cb_ctx.audio_engine) return env->NewStringUTF("engine=null");
     audio_engine_debug_string(ctx->cb_ctx.audio_engine, report, sizeof(report));
     return env->NewStringUTF(report);
-}
-
-extern "C"
-JNIEXPORT jboolean JNICALL
-Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeServerAudioDebug(
-        JNIEnv *env, jobject thiz, jlong handle, jobject buf) {
-    server_ctx_t *ctx = (server_ctx_t *)(intptr_t)handle;
-    if (!ctx || !ctx->cb_ctx.audio_engine || !buf) return JNI_FALSE;
-    void *addr = env->GetDirectBufferAddress(buf);
-    jlong cap = env->GetDirectBufferCapacity(buf);
-    if (!addr || cap <= 0) return JNI_FALSE;
-    return audio_engine_get_debug(ctx->cb_ctx.audio_engine, addr, (size_t)cap) ? JNI_TRUE : JNI_FALSE;
 }
 
 /* [kbtv] debug-only: headless injector bypass (see mirror_buffer.c) */

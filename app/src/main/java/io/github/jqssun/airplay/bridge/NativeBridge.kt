@@ -20,7 +20,6 @@ object NativeBridge {
 
     external fun nativeSetDisplaySize(handle: Long, w: Int, h: Int, fps: Int)
     external fun nativeSetPlist(handle: Long, key: String, value: Int)
-    external fun nativeSetH265Enabled(handle: Long, enabled: Boolean)
     external fun nativeSetCodecs(handle: Long, alac: Boolean, aac: Boolean)
     external fun nativeSetHlsEnabled(handle: Long, enabled: Boolean)
     /** [kbtv] debug-only headless-injector bypass; see mirror_buffer.c */
@@ -50,6 +49,4 @@ object NativeBridge {
     external fun nativeTestAacFile(path: String, ct: Int, spf: Int, sampleRate: Int, channels: Int): String
     // live-session audio counters as key=val string (see audio_engine_debug_string)
     external fun nativeServerAudioStats(handle: Long): String
-    // fills direct buffer with packed debug snapshot; false if audio isn't running
-    external fun nativeServerAudioDebug(handle: Long, buf: java.nio.ByteBuffer): Boolean
 }
