@@ -12,21 +12,9 @@
     <string name="service_stopped">投屏服务已停止</string>
     <string name="mirror_connecting">正在连接投屏…</string>
     <string name="starting_service">正在启动服务...</string>
-    <string name="service_started">服务已启动</string>
     <string name="service_error">服务启动失败</string>
-
-    <!-- 设备名称 -->
-    <string name="device_name">凯机投屏</string>
 
     <!-- 通知 -->
     <string name="foreground_service_channel">投屏服务</string>
     <string name="foreground_service_notification">凯机投屏服务运行中</string>
-
-    <!-- 遥控器 -->
-    <string name="play">播放</string>
-    <string name="pause">暂停</string>
-    <string name="stop">停止</string>
-    <string name="volume_up">音量+</string>
-    <string name="volume_down">音量-</string>
-    <string name="exit">退出</string>
 </resources>
