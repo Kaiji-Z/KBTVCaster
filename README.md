@@ -48,6 +48,7 @@
 |---|---|
 | `app-release.apk` | DLNA 稳定版（镜像协议未注册），正式签名 |
 | `app-release-airplay.apk` | 含实验性 AirPlay 镜像，正式签名 |
+| `app-release-menu.apk` | DLNA 稳定版 + 播放器菜单（MENU 键：翻转/变速/循环/比例），正式签名 |
 
 ### 方式 2：从源码构建
 
@@ -70,7 +71,7 @@ adb install -r app-release-airplay.apk
 # 或拷进 U 盘，用电视文件管理器侧载
 ```
 
-**环境要求：** Android 6.0 (API 23) 及以上，手机/电脑与电视在同一局域网。ABI：`arm64-v8a`、`x86_64`、`x86`（网络 adb 安装慢时可加 `-Pkbtv.build.abi=arm64-v8a` 构建单 ABI 瘦身包，约 19MB）。
+**环境要求：** Android 6.0 (API 23) 及以上，手机/电脑与电视在同一局域网。ABI：`arm64-v8a`、`armeabi-v7a`、`x86_64`、`x86`（网络 adb 安装慢时可加 `-Pkbtv.build.abi=arm64-v8a` 构建单 ABI 瘦身包）。
 
 ## 📱 使用方法
 
@@ -116,7 +117,7 @@ adb install -r app-release-airplay.apk
 
 **协议抽象设计**：所有投屏协议通过 `CastProtocol` 接口接入，只负责发现/接收命令并转发统一的 `PlaybackCommand`，不触碰播放器。目前注册 `DlnaProtocol` 与 `AirPlayMirrorProtocol`（后者由 `kbtv.flags.airplay` 门控），未来新增协议只需加一个实现。
 
-**AirPlay 侧要点**：UxPlay 内核以源码内嵌（GPLv3，许可一致），经一层薄 JNI（`NativeBridge`）驱动；视频走逐 NAL 喂入的 MediaCodec 硬解（模拟器自动回退软解），音频走 NdkMediaCodec（AAC-ELD/LC）+ 自编译最小 FFmpeg ALAC 子集 + oboe 低延迟输出；mDNS 在 Android 6 上由 NsdManager 与自带应答器双路注册。
+**AirPlay 侧要点**：UxPlay 内核以源码内嵌（GPLv3，许可一致），经一层薄 JNI（`NativeBridge`）驱动；视频走逐 NAL 喂入的 MediaCodec 硬解（模拟器自动回退软解），音频优先 ffmpeg 软解（AAC-ELD/LC + ALAC）、平台硬解兜底，经自建时间线缓冲进 oboe 低延迟输出；mDNS 在 Android 6 上由 NsdManager 与自带应答器双路注册。
 
 ## ❓ FAQ
 
@@ -153,13 +154,13 @@ adb install -r app-release-airplay.apk
 
 ## 🛠️ 开发
 
-**技术栈：** Kotlin 1.9 · Media3 ExoPlayer · Cling UPnP（vendored 源码）· UxPlay（C，NDK/CMake）· oboe 1.9 · FFmpeg（最小 ALAC 子集，预编译）
+**技术栈：** Kotlin 1.9 · Media3 ExoPlayer · Cling UPnP（vendored 源码）· UxPlay（C，NDK/CMake）· oboe 1.9 · FFmpeg（最小 ALAC+AAC 软解子集，预编译）
 
 ```bash
 ./gradlew assembleDebug                            # 构建（DLNA 版）
 ./gradlew assembleDebug -Pkbtv.flags.airplay=true  # 构建（含镜像协议）
-./gradlew test                                     # JVM 单元测试（39 个）
-./gradlew connectedDebugAndroidTest                # 端到端测试（需 TV 模拟器/真机，7 个）
+./gradlew test                                     # JVM 单元测试
+./gradlew connectedDebugAndroidTest                # 端到端测试（需 TV 模拟器/真机）
 ./gradlew lint                                     # 静态检查（非阻塞）
 ```
 
@@ -167,9 +168,11 @@ adb install -r app-release-airplay.apk
 |---|---|
 | `-Pkbtv.flags.airplay=true` | 注册 AirPlay 镜像协议 |
 | `-Pkbtv.flags.playbackPlan=true` | 启用纯函数 PlaybackPlan 路径（对照实验用） |
+| `-Pkbtv.flags.playerMenu=true` | 播放器菜单（遥控器 MENU 键：翻转/变速/循环/比例） |
+| `-Pkbtv.flags.injector=true` | 仅 debug：headless 镜像注入器旁路（release 构建强制关闭） |
 | `-Pkbtv.build.abi=<abi>` | 单 ABI 构建（网络 adb 安装提速） |
 
-推送 master / PR 时 CI 自动跑构建 + 单测（flag off/on 双跑），见 `.github/workflows/android.yml`。打 `v*` tag 时 CI 自动构建双 APK 并挂到 GitHub Release，见 `.github/workflows/release.yml`；本地发版入口是 `scripts/release.sh <version>`（约定见 `.opencode/skills/kbtv-versioning/`）。
+推送 master / PR 时 CI 自动跑构建 + 单测（默认 + 三旗矩阵），见 `.github/workflows/android.yml`。打 `v*` tag 时 CI 自动构建三个 APK（默认 / airplay / menu）并挂到 GitHub Release，见 `.github/workflows/release.yml`；本地发版入口是 `scripts/release.sh <version>`（约定见 `.opencode/skills/kbtv-versioning/`）。
 
 代码规范、架构说明、已知坑点详见 [AGENTS.md](AGENTS.md)。
 
@@ -177,7 +180,7 @@ adb install -r app-release-airplay.apk
 > 以下目录是**只读 vendor 代码**，请勿修改：
 > - `app/src/main/java/org/fourthline/cling/`（533 个 Java 文件；Cling 从未发布到 Maven Central，无法换成依赖）
 > - `app/libs/`（Jetty 等 JAR，供应 Cling 传递依赖）
-> - `app/src/main/cpp/third_party/`（UxPlay / libplist 上游树；本项目适配改动在 `cpp/` 自有源码与 `cpp/patches/` 中）
+> - `app/src/main/cpp/third_party/`（UxPlay / libplist 上游树）。对 UxPlay 内核的适配改动**就地**落在树内、以 `[kbtv]` 注释标记并注明现场依据（`cpp/patches/` 里的 6 个补丁是上游项目自带的，已与树内实际状态脱节，不再作为适配载体）
 
 ### 项目结构
 
@@ -203,7 +206,7 @@ app/src/main/cpp/                 # NDK：NativeBridge + dnssd shim + 音频引�
 
 - 一个 commit 一个逻辑改动（[提交规范](AGENTS.md#git)）
 - 改动附测试（如有可单测的逻辑）
-- 不修改上述 vendor 目录；对 UxPlay 的适配改动放 `cpp/` 自有代码或 `cpp/patches/`
+- 不修改上述 vendor 目录；对 UxPlay 的适配就地改、带 `[kbtv]` 注释标记
 
 ## 📄 许可证
 
@@ -215,7 +218,7 @@ app/src/main/cpp/                 # NDK：NativeBridge + dnssd shim + 音频引�
 |---|---|---|---|
 | UxPlay（含其内嵌 llhttp、playfair 等） | `app/src/main/cpp/third_party/UxPlay/` | GPLv3 | 一致 |
 | libplist | `app/src/main/cpp/third_party/libplist/` | LGPL-2.1 | 兼容（单向） |
-| FFmpeg 最小 ALAC 子集（自编译） | `app/src/main/cpp/prebuilt/ffmpeg/` | LGPL-2.1+ | 兼容（单向） |
+| FFmpeg 最小 ALAC+AAC 子集（自编译） | `app/src/main/cpp/prebuilt/ffmpeg/` | LGPL-2.1+ | 兼容（单向） |
 | OpenSSL | `app/src/main/cpp/prebuilt/openssl/` | Apache-2.0 | 兼容（单向） |
 | oboe | Maven prefab | Apache-2.0 | 兼容（单向） |
 | Cling UPnP | `org/fourthline/cling/` | LGPL-2.1+ / CDDL 双许可 | 适用 LGPL 腿 |
