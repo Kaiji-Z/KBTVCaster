@@ -7,8 +7,8 @@
 #   preflight -> bump versionName/versionCode -> require changelog
 #   -> release commit -> annotated tag -> push master + tag.
 # Pushing the v* tag triggers .github/workflows/release.yml, which builds the
-# signed release APK variants (default / airplay / playerMenu) and publishes
-# them to a GitHub Release.
+# signed full-featured release APK (airplay + playerMenu forced on) and
+# publishes it to a GitHub Release.
 
 set -euo pipefail
 

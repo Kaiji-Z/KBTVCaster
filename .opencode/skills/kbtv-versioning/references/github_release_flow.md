@@ -8,13 +8,12 @@ Releases are **built by CI, not on the laptop**. The pipeline:
 scripts/release.sh X.Y.Z
   └─ git push origin master vX.Y.Z
        └─ .github/workflows/release.yml (on: push tags v*)
-            ├─ assembleRelease (KBTV_KEYSTORE_* env)      → app-release.apk
-            ├─ assembleRelease -Pkbtv.flags.airplay=true  → app-release-airplay.apk
-            ├─ assembleRelease -Pkbtv.flags.playerMenu=true → app-release-menu.apk
+            ├─ assembleRelease (KBTV_KEYSTORE_* env) → app-release.apk
+            │   (release buildType forces FLAG_AIRPLAY_PROTOCOL + FLAG_PLAYER_MENU on)
             └─ softprops/action-gh-release@v2
                  ├─ body: releases/vX.Y.Z/VERSION_vX.Y.Z.md (project changelog)
                  ├─ generate_release_notes: true (GitHub commit notes appended)
-                 └─ files: all three APKs
+                 └─ files: app-release.apk
 ```
 
 ## Requirements
@@ -55,4 +54,4 @@ gh release create vX.Y.Z app/build/outputs/apk/release/app-release.apk \
   --title "Release vX.Y.Z" --notes "$(cat releases/vX.Y.Z/VERSION_vX.Y.Z.md)"
 ```
 
-Note: this bypasses the airplay-variant build and the CI environment — prefer fixing CI over using this.
+Note: this bypasses the CI environment — prefer fixing CI over using this.

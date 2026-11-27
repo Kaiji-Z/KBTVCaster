@@ -14,7 +14,7 @@ I manage KBTVCaster versions throughout the development lifecycle:
 
 - **Version determination**: Analyze changes since the last tag, suggest a SemVer bump
 - **Release execution**: Drive `scripts/release.sh` (repo root), which bumps `versionName`/`versionCode`, writes the changelog, commits, tags, and pushes
-- **CI-built releases**: Pushing a `v*` tag triggers `.github/workflows/release.yml`, which builds the three signed APK variants (default / airplay / playerMenu) and publishes them to a GitHub Release — no local APK builds, no local tarball archives
+- **CI-built releases**: Pushing a `v*` tag triggers `.github/workflows/release.yml`, which builds the single signed full-featured APK (airplay + playerMenu forced on in the release buildType) and publishes it to a GitHub Release — no local APK builds, no local tarball archives
 - **Rollback**: Guide checkout/reset to a previous tag
 
 ## When to Use Me
@@ -42,13 +42,9 @@ I manage KBTVCaster versions throughout the development lifecycle:
      ├─ commit "Release X.Y.Z", annotated tag vX.Y.Z
      └─ push origin master vX.Y.Z   ← tag push triggers CI
 5. GitHub Actions (.github/workflows/release.yml):
-     ├─ assembleRelease          → app-release.apk        (DLNA 稳定版)
-     ├─ assembleRelease -Pkbtv.flags.airplay=true
-                                 → app-release-airplay.apk (实验性镜像)
-     ├─ assembleRelease -Pkbtv.flags.playerMenu=true
-                                 → app-release-menu.apk   (播放器菜单)
-     └─ 三个 APK 均以 GitHub Secrets 中的密钥正式签名并过 apksigner 校验
-     └─ GitHub Release: changelog as body + auto notes + all three APKs
+     ├─ assembleRelease          → app-release.apk        (全功能版：airplay + playerMenu 强制开启)
+     └─ APK 以 GitHub Secrets 中的密钥正式签名并过 apksigner 校验
+     └─ GitHub Release: changelog as body + auto notes + the APK
 6. Verify: gh run watch --workflow=release.yml, then gh release view vX.Y.Z
 ```
 
@@ -112,7 +108,7 @@ System:
   $ scripts/release.sh 0.3.0
   ... (commits, tags v0.3.0, pushes; CI builds APKs)
   $ gh run watch --workflow=release.yml
-  ✅ Release v0.3.0 live with app-release.apk + app-release-airplay.apk + app-release-menu.apk
+  ✅ Release v0.6.0 live with app-release.apk
 ```
 
 ## Output Format
@@ -126,7 +122,7 @@ Git:
 
 CI:
 - Workflow run: {run_url}
-- Artifacts: app-release.apk, app-release-airplay.apk on the GitHub Release
+- Artifacts: app-release.apk on the GitHub Release
 
 Rollback:
 git checkout v{x.x.x}

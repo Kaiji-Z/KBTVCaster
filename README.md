@@ -32,11 +32,11 @@
 | HLS 流（`.m3u8`） | ✅ 含百度网盘 UA 适配 |
 | 遥控器控制（播放 / 暂停 / 快进 / 音量） | ✅ D-Pad 全键映射 |
 | 开机自启 | ✅ 前台服务，常驻运行 |
-| AirPlay 屏幕镜像（iPhone → 电视） | 🧪 实验性，构建 flag 门控 |
+| AirPlay 屏幕镜像（iPhone → 电视） | 🧪 实验性，release 已默认启用 |
 | AirPlay 镜像音频 | 🧪 解码链已接通（AAC-ELD/LC + ALAC），真机联调中 |
 
 > [!IMPORTANT]
-> **AirPlay 镜像是实验性功能**，协议默认不注册，需要用 `-Pkbtv.flags.airplay=true` 构建（Releases 里的 `app-release-airplay.apk` 已开启）。验证状态：模拟器端到端全通过（900 帧零丢帧，帧延迟 p95 ≈ 148ms）；真机（Android 6 电视）设备列表与连接已确认，画面/音频联调收尾中。镜像基于 UxPlay，仅支持**非 DRM** 内容。
+> **AirPlay 镜像仍是实验性功能**（仅支持**非 DRM** 内容），但已随主 release 默认启用，无需再选变体包；本地 debug 构建可用 `-Pkbtv.flags.airplay=true` 单独开启。验证状态：模拟器端到端全通过（900 帧零丢帧，帧延迟 p95 ≈ 148ms）；真机（Android 6 电视）设备列表与连接已确认，画面/音频联调收尾中。镜像基于 UxPlay。
 
 ## 📥 下载安装
 
@@ -46,9 +46,7 @@
 
 | APK | 内容 |
 |---|---|
-| `app-release.apk` | DLNA 稳定版（镜像协议未注册），正式签名 |
-| `app-release-airplay.apk` | 含实验性 AirPlay 镜像，正式签名 |
-| `app-release-menu.apk` | DLNA 稳定版 + 播放器菜单（MENU 键：翻转/变速/循环/比例），正式签名 |
+| `app-release.apk` | 全功能版：DLNA 投屏 + AirPlay 镜像（实验性）+ 播放器菜单（MENU 键：翻转/变速/循环/比例），正式签名 |
 
 ### 方式 2：从源码构建
 
@@ -57,8 +55,8 @@ git clone https://github.com/Kaiji-Z/KBTVCaster.git
 cd KBTVCaster
 ./gradlew assembleDebug                              # Debug 包（日常开发）
 ./gradlew assembleRelease -Pkbtv.signing.keystore=<路径>     -Pkbtv.signing.storePassword=<密码> -Pkbtv.signing.keyAlias=kbtv     -Pkbtv.signing.keyPassword=<密码>                   # 签名 Release 包
-# Release 产物：app/build/outputs/apk/release/app-release.apk
-# 镜像版加 -Pkbtv.flags.airplay=true；本地无签名密钥时 Release 为未签名包
+# Release 产物：app/build/outputs/apk/release/app-release.apk（已含全部功能）
+# 本地无签名密钥时 Release 为未签名包
 ```
 
 ### 安装到电视
@@ -66,7 +64,7 @@ cd KBTVCaster
 ```bash
 # 网络 adb（电视需开启网络调试）
 adb connect <电视IP>:5555
-adb install -r app-release-airplay.apk
+adb install -r app-release.apk
 
 # 或拷进 U 盘，用电视文件管理器侧载
 ```
@@ -166,13 +164,13 @@ adb install -r app-release-airplay.apk
 
 | Gradle 属性 | 作用 |
 |---|---|
-| `-Pkbtv.flags.airplay=true` | 注册 AirPlay 镜像协议 |
+| `-Pkbtv.flags.airplay=true` | 注册 AirPlay 镜像协议（release 构建已默认开启） |
 | `-Pkbtv.flags.playbackPlan=true` | 启用纯函数 PlaybackPlan 路径（对照实验用） |
-| `-Pkbtv.flags.playerMenu=true` | 播放器菜单（遥控器 MENU 键：翻转/变速/循环/比例） |
+| `-Pkbtv.flags.playerMenu=true` | 播放器菜单（遥控器 MENU 键：翻转/变速/循环/比例；release 构建已默认开启） |
 | `-Pkbtv.flags.injector=true` | 仅 debug：headless 镜像注入器旁路（release 构建强制关闭） |
 | `-Pkbtv.build.abi=<abi>` | 单 ABI 构建（网络 adb 安装提速） |
 
-推送 master / PR 时 CI 自动跑构建 + 单测（默认 + 三旗矩阵），见 `.github/workflows/android.yml`。打 `v*` tag 时 CI 自动构建三个 APK（默认 / airplay / menu）并挂到 GitHub Release，见 `.github/workflows/release.yml`；本地发版入口是 `scripts/release.sh <version>`（约定见 `.opencode/skills/kbtv-versioning/`）。
+推送 master / PR 时 CI 自动跑构建 + 单测（默认 + 三旗矩阵），见 `.github/workflows/android.yml`。打 `v*` tag 时 CI 自动构建单一全功能 APK 并挂到 GitHub Release，见 `.github/workflows/release.yml`；本地发版入口是 `scripts/release.sh <version>`（约定见 `.opencode/skills/kbtv-versioning/`）。
 
 代码规范、架构说明、已知坑点详见 [AGENTS.md](AGENTS.md)。
 
